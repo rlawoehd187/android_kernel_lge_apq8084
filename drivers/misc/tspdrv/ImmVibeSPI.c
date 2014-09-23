@@ -109,11 +109,6 @@ static void __iomem *virt_bases_v = NULL;
 #define REG_WRITEL(value, reg)		writel(value, reg)
 #define REG_READL(reg)			readl(reg)
 
-#ifdef IMMVIBESPIAPI
-#undef IMMVIBESPIAPI
-#endif
-#define IMMVIBESPIAPI static
-
 /*
  ** This SPI supports only one actuator.
  */
@@ -133,7 +128,7 @@ static int mmss_cc_d_half;
 #define PRE_FORCE_DEF	128
 static int previous_nForce = PRE_FORCE_DEF;
 
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex);
+VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex);
 
 struct timed_vibrator_data {
 	atomic_t gp3_clk_flag;
@@ -338,7 +333,7 @@ static struct platform_driver sm100_driver = {
 /*
  ** Called to disable amp (disable output force)
  */
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
+VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex)
 {
 	//printk("%s : g_bAmpEnabled:%d\n", __func__, g_bAmpEnabled);
 	if (g_bAmpEnabled)
@@ -349,8 +344,8 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex
 	        sm100_power_set(0, &vib);
 
 			if (atomic_read(&vib.gp3_clk_flag) == 1) {
-				clk_disable_unprepare(gp3_clk);
 				atomic_set(&vib.gp3_clk_flag, 0);
+				clk_disable_unprepare(gp3_clk);
 			}
 
 
@@ -365,19 +360,20 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpDisable(VibeUInt8 nActuatorIndex
 
 	return VIBE_S_SUCCESS;
 }
+EXPORT_SYMBOL(ImmVibeSPI_ForceOut_AmpDisable);
 
 /*
  ** Called to enable amp (enable output force)
  */
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex, VibeInt8 nForce)
+VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex, VibeInt8 nForce)
 {
 	//printk("%s : g_bAmpEnabled:%d\n", __func__, g_bAmpEnabled);
 	if (!g_bAmpEnabled)
 	{
 		if(sm100_flag) {
 			if (atomic_read(&vib.gp3_clk_flag) == 0) {
-				clk_prepare_enable(gp3_clk);
 				atomic_set(&vib.gp3_clk_flag, 1);
+				clk_prepare_enable(gp3_clk);
 			}
 
 			sm100_power_set(1, &vib);
@@ -391,12 +387,13 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_AmpEnable(VibeUInt8 nActuatorIndex,
 
 	return VIBE_S_SUCCESS;
 }
+EXPORT_SYMBOL(ImmVibeSPI_ForceOut_AmpEnable);
 
 /*
  ** Called at initialization time to set PWM freq, disable amp, etc...
  */
 
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_Initialize(void)
+static VibeStatus ImmVibeSPI_ForceOut_Initialize(void)
 {
 
 	int rc;
@@ -424,7 +421,7 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_Initialize(void)
 /*
  ** Called at termination time to set PWM freq, disable amp, etc...
  */
-IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_Terminate(void)
+static VibeStatus ImmVibeSPI_ForceOut_Terminate(void)
 {
 	INFO_MSG("\n");
 
@@ -444,8 +441,7 @@ IMMVIBESPIAPI VibeStatus ImmVibeSPI_ForceOut_Terminate(void)
 /*
  ** Called by the real-time loop to set PWM duty cycle
  */
-IMMVIBESPIAPI VibeStatus
-ImmVibeSPI_ForceOut_SetSamples(VibeUInt8 nActuatorIndex,
+static VibeStatus ImmVibeSPI_ForceOut_SetSamples(VibeUInt8 nActuatorIndex,
 		VibeUInt16 nOutputSignalBitDepth,
 		VibeUInt16 nBufferSizeInBytes,
 		VibeInt8* pForceOutputBuffer)
@@ -512,11 +508,19 @@ ImmVibeSPI_ForceOut_SetSamples(VibeUInt8 nActuatorIndex,
 	return VIBE_S_SUCCESS;
 }
 
+/* For tuning of the timed interface strength */
+#define DEFAULT_TIMED_STRENGTH 65
+VibeInt8 timedForce = DEFAULT_TIMED_STRENGTH;
+
+VibeStatus ImmVibeSPI_SetTimedSample(void) {
+	return ImmVibeSPI_ForceOut_SetSamples(0, 8, 1, &timedForce);
+}
+
 /*
  ** Called to set force output frequency parameters
  */
 #if 0
-IMMVIBESPIAPI VibeStatus
+static VibeStatus
 ImmVibeSPI_ForceOut_SetFrequency(VibeUInt8 nActuatorIndex,
 		VibeUInt16 nFrequencyParameterID,
 		VibeUInt32 nFrequencyParameterValue)
@@ -530,7 +534,7 @@ ImmVibeSPI_ForceOut_SetFrequency(VibeUInt8 nActuatorIndex,
 /*
  ** Called to get the device name (device name must be returned as ANSI char)
  */
-IMMVIBESPIAPI VibeStatus
+static VibeStatus
 ImmVibeSPI_Device_GetName(VibeUInt8 nActuatorIndex, char *szDevName, int nSize)
 {
 #if 0
