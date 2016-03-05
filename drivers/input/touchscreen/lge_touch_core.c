@@ -190,6 +190,7 @@ void send_uevent_lpwg(struct i2c_client *client, int type)
 			== UEVENT_IDLE) {
 		atomic_set(&ts->state.uevent_state, UEVENT_BUSY);
 		send_uevent(&client->dev, lpwg_uevent[type-1]);
+                atomic_set(&ts->state.uevent_state, UEVENT_IDLE);
 		if (type == LPWG_DOUBLE_TAP) {
 			input_report_key(ts->input_dev, KEY_POWER, BUTTON_PRESSED);
 			input_report_key(ts->input_dev, KEY_POWER, BUTTON_RELEASED);
