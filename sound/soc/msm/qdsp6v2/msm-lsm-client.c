@@ -238,7 +238,7 @@ static int msm_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 		if (copy_from_user(prtd->lsm_client->sound_model.data,
 			   snd_model_v2.data, snd_model_v2.data_size)) {
 			pr_err("%s: copy from user data failed\n"
-			       "data %p size %d\n", __func__,
+			       "data %pK size %d\n", __func__,
 			       snd_model_v2.data, snd_model_v2.data_size);
 			q6lsm_snd_model_buf_free(prtd->lsm_client);
 			rc = -EFAULT;
@@ -327,7 +327,7 @@ static int msm_lsm_ioctl_shared(struct snd_pcm_substream *substream,
 
 		if (copy_from_user(prtd->lsm_client->sound_model.data,
 				   snd_model.data, snd_model.data_size)) {
-			pr_err("%s: copy from user data failed data %p size %d\n",
+			pr_err("%s: copy from user data failed data %pK size %d\n",
 			       __func__, snd_model.data, snd_model.data_size);
 			rc = -EFAULT;
 			q6lsm_snd_model_buf_free(prtd->lsm_client);
