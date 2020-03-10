@@ -21,12 +21,31 @@
 #include <linux/usb/composite.h>
 #include <asm/unaligned.h>
 
+#ifdef CONFIG_DEBUG_FS
+#include <linux/debugfs.h>
+#endif
+#ifdef CONFIG_USB_G_LGE_ANDROID
+#include <linux/usb/cdc.h>
+#endif
+#ifdef CONFIG_LGE_PM
+#include <mach/board_lge.h>
+#endif
+#ifdef CONFIG_USB_G_LGE_MULTIPLE_CONFIGURATION
+#include "u_lgeusb.h"
+#endif
+
 /*
  * The code in this file is utility code, used to build a gadget driver
  * from one or more "function" drivers, one or more "configuration"
  * objects, and a "usb_composite_driver" by gluing them together along
  * with the relevant device-wide data.
  */
+
+
+#ifdef CONFIG_USB_G_LGE_ANDROID
+unsigned int log_dump = 0;
+module_param(log_dump, uint, S_IRUGO | S_IWUSR);
+#endif
 
 static struct usb_gadget_strings **get_containers_gs(
 		struct usb_gadget_string_container *uc)
@@ -391,6 +410,10 @@ static int config_buf(struct usb_configuration *config,
 	/* add each function's descriptors */
 	list_for_each_entry(f, &config->functions, list) {
 		struct usb_descriptor_header **descriptors;
+#ifdef CONFIG_USB_G_LGE_MULTIPLE_CONFIGURATION
+		if (f->desc_change)
+			f->desc_change(f, lgeusb_get_host_os());
+#endif
 
 		switch (speed) {
 		case USB_SPEED_SUPER:
@@ -1217,6 +1240,14 @@ static void composite_setup_complete(struct usb_ep *ep, struct usb_request *req)
 				req->status, req->actual, req->length);
 }
 
+#ifdef CONFIG_USB_G_LGE_ANDROID
+#define DUMP_BUFFER(prestr, cnt, buf) \
+do { \
+           print_hex_dump(KERN_INFO, prestr, DUMP_PREFIX_NONE, \
+                                16, 1, buf, (cnt < 16 ? cnt : 16), false); \
+} while (0)
+#endif
+
 /*
  * The setup() callback implements all the ep0 functionality that's
  * not handled lower down, in hardware or the hardware driver(like
@@ -1251,6 +1282,11 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	req->complete = composite_setup_complete;
 	req->length = 0;
 	gadget->ep0->driver_data = cdev;
+
+#ifdef CONFIG_USB_G_LGE_ANDROID
+	if(log_dump)
+		INFO(cdev, "[%s]bRequest:%d, bRequestType:%d\n", __func__, ctrl->bRequest, ctrl->bRequestType);
+#endif
 
 	switch (ctrl->bRequest) {
 
@@ -1295,6 +1331,10 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
 			value = config_desc(cdev, w_value);
+#ifdef CONFIG_USB_G_LGE_ANDROID
+			if(value>=0 && log_dump)
+				DUMP_BUFFER( "USB_DT_CONFIG:", value, cdev->req->buf);
+#endif
 			if (value >= 0)
 				value = min(w_length, (u16) value);
 			break;
@@ -1303,13 +1343,21 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			c = list_first_entry(&cdev->configs,
 				struct usb_configuration, list);
-			if (c && c->descriptors)
+			if (c && c->descriptors) {
 				value = usb_find_descriptor_fillbuf(req->buf,
 						USB_COMP_EP0_BUFSIZ,
 						c->descriptors,
 						USB_DT_OTG);
+#ifdef CONFIG_USB_G_LGE_ANDROID
+				if(value>=0 && log_dump)
+					DUMP_BUFFER( "USB_DT_OTG:", value, cdev->req->buf);
+#endif
+			}
 			break;
 		case USB_DT_STRING:
+#ifdef CONFIG_USB_G_LGE_MULTIPLE_CONFIGURATION
+			lgeusb_set_host_os(w_length);
+#endif
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)
@@ -1339,6 +1387,10 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		}
 		spin_lock(&cdev->lock);
 		value = set_config(cdev, ctrl, w_value);
+#ifdef CONFIG_USB_G_LGE_ANDROID
+		if( log_dump)
+			INFO(cdev, "[%s] USB_REQ_SET_CONFIGURATION: w_value[%d]\n", __func__, w_value);
+#endif
 		spin_unlock(&cdev->lock);
 		break;
 	case USB_REQ_GET_CONFIGURATION:
@@ -1532,7 +1584,9 @@ void composite_disconnect(struct usb_gadget *gadget)
 {
 	struct usb_composite_dev	*cdev = get_gadget_data(gadget);
 	unsigned long			flags;
-
+#ifdef CONFIG_USB_G_LGE_MULTIPLE_CONFIGURATION
+	lgeusb_set_host_os(WIN_LINUX_TYPE);
+#endif
 	/* REVISIT:  should we have config and device level
 	 * disconnect callbacks?
 	 */
@@ -1694,6 +1748,187 @@ void composite_dev_cleanup(struct usb_composite_dev *cdev)
 	cdev->next_string_id = 0;
 	device_remove_file(&cdev->gadget->dev, &dev_attr_suspended);
 }
+#if defined CONFIG_DEBUG_FS && defined CONFIG_USB_G_LGE_ANDROID
+static char debug_buffer[PAGE_SIZE];
+
+static ssize_t debug_desc_read(struct file *file, char __user *ubuf,
+		size_t count, loff_t *ppos)
+{
+	struct usb_composite_dev *cdev = file->private_data;
+	struct usb_device_descriptor *desc;
+	struct usb_configuration *config;
+	struct usb_function		*f;
+	enum usb_device_speed speed = USB_SPEED_UNKNOWN;
+
+	char *buf = debug_buffer;
+	unsigned long flags;
+	int cfg_count = 0, i = 0;
+
+	if (!cdev)
+		return 0;
+
+	desc = &cdev->desc;
+	speed = cdev->gadget->speed;
+
+	spin_lock_irqsave(&cdev->lock, flags);
+	i += snprintf(buf + i, PAGE_SIZE - i,
+			"Device Descriptor Infomation:\n");
+	i += snprintf(buf + i, PAGE_SIZE - i,
+			"\tVendor: %08x, Product: %08x\n",
+			desc->idVendor, desc->idProduct);
+	i += snprintf(buf + i, PAGE_SIZE - i,
+			"\tClass: %08x, SubClass: %08x, Protocol: %08x\n",
+			desc->bDeviceClass, desc->bDeviceSubClass,
+			desc->bDeviceProtocol);
+	i += snprintf(buf + i, PAGE_SIZE - i,
+			"USB speed is %s\n",
+			(speed == USB_SPEED_HIGH ? "HIGH" : "FULL"));
+
+	if (list_empty(&cdev->configs)) {
+		i += snprintf(buf + i, PAGE_SIZE - i,
+			"USB is not configured. It may be disabled....\n");
+		goto empty_list;
+	}
+
+	list_for_each_entry(config, &cdev->configs, list) {
+		i += snprintf(buf + i, PAGE_SIZE - i,
+				"USB Configuration #%d:\n", cfg_count++);
+
+		list_for_each_entry(f, &config->functions, list) {
+			struct usb_descriptor_header **descriptors;
+			struct usb_descriptor_header *descriptor;
+
+			if (speed == USB_SPEED_HIGH)
+				descriptors = f->hs_descriptors;
+			else
+				descriptors = f->fs_descriptors;
+
+			if (!descriptors || descriptors[0] == NULL)
+				continue;
+
+			i += snprintf(buf + i, PAGE_SIZE - i,
+					"\tFunction descriptor: %s\n", f->name);
+
+			while ((descriptor = *descriptors++) != NULL) {
+				struct usb_interface_descriptor *intf;
+				struct usb_interface_assoc_descriptor *iad;
+				struct usb_cdc_header_desc *cdc_header;
+				struct usb_cdc_union_desc *union_desc;
+				struct usb_cdc_call_mgmt_descriptor *call_mgmt;
+				struct usb_endpoint_descriptor *ep;
+
+				intf = (struct usb_interface_descriptor *)
+					descriptor;
+				switch (intf->bDescriptorType) {
+				case USB_DT_INTERFACE:
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\tInterface descriptor\n");
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\tbNumEndpoints: %d\n"
+							"\t\tbInterfaceNumber: %d\n"
+							"\t\tbInterfaceClass: %d\n"
+							"\t\tbInterfaceSubClass: %d\n"
+							"\t\tbInterfaceProtocol: %d\n\n",
+							intf->bNumEndpoints,
+							intf->bInterfaceNumber,
+							intf->bInterfaceClass,
+							intf->bInterfaceSubClass,
+							intf->bInterfaceProtocol);
+					break;
+				case USB_DT_INTERFACE_ASSOCIATION:
+					iad = (struct usb_interface_assoc_descriptor *)
+						descriptor;
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\tIAD Interface descriptor\n");
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\tbFirstInterface: %d\n"
+							"\t\tbInterfaceCount: %d\n"
+							"\t\tbFunctionClass: %d\n"
+							"\t\tbFunctionSubClass: %d\n"
+							"\t\tbFunctionProtocol: %d\n\n",
+							iad->bFirstInterface,
+							iad->bInterfaceCount,
+							iad->bFunctionClass,
+							iad->bFunctionSubClass,
+							iad->bFunctionProtocol);
+					break;
+				case USB_DT_CS_INTERFACE:
+					cdc_header = (struct usb_cdc_header_desc *)
+						descriptor;
+					if (cdc_header->bDescriptorSubType ==
+							USB_CDC_CALL_MANAGEMENT_TYPE) {
+						call_mgmt = (struct usb_cdc_call_mgmt_descriptor *)
+							descriptor;
+						i += snprintf(buf + i, PAGE_SIZE - i,
+								"\t\tCDC CALL MGMT Interface descriptor\n");
+						i += snprintf(buf + i, PAGE_SIZE - i,
+								"\t\tbDataInterface: %d\n\n",
+								call_mgmt->bDataInterface);
+					} else if (cdc_header->bDescriptorSubType ==
+							USB_CDC_UNION_TYPE) {
+						union_desc = (struct usb_cdc_union_desc *)
+							descriptor;
+						i += snprintf(buf + i, PAGE_SIZE - i,
+								"\t\tCDC UNION Interface descriptor\n");
+						i += snprintf(buf + i, PAGE_SIZE - i,
+								"\t\tbMasterInterface0: %d\n"
+								"\t\tbSlaveInterface0: %d\n\n",
+								union_desc->bMasterInterface0,
+								union_desc->bSlaveInterface0);
+					}
+					break;
+				case USB_DT_ENDPOINT:
+					ep = (struct usb_endpoint_descriptor *)
+						descriptor;
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\t\tEndpoint descriptor\n");
+					i += snprintf(buf + i, PAGE_SIZE - i,
+							"\t\t\tbEndpointAddress: 0x%x(%s)\n"
+							"\t\t\tbmAttributes: %s\n"
+							"\t\t\twMaxPacketSize: %d\n"
+							"\t\t\tbInterval: %d\n\n",
+							ep->bEndpointAddress,
+							(ep->bEndpointAddress & USB_DIR_IN ? "IN" : "OUT"),
+							(ep->bmAttributes == USB_ENDPOINT_XFER_INT ? "INT" : "BULK"),
+							ep->wMaxPacketSize,
+							ep->bInterval);
+					break;
+				default:
+					/* do nothing */
+					break;
+				}
+
+			}
+		}
+	}
+
+empty_list:
+	spin_unlock_irqrestore(&cdev->lock, flags);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, i);
+}
+
+static int debug_desc_open(struct inode *inode, struct file *file)
+{
+	file->private_data = inode->i_private;
+	return 0;
+}
+
+const struct file_operations debug_desc_ops = {
+	.open = debug_desc_open,
+	.read = debug_desc_read,
+};
+
+static void composite_debugfs_init(struct usb_composite_dev	*cdev)
+{
+	struct dentry *dent;
+	dent = debugfs_create_dir("usb_composite", 0);
+	if (IS_ERR(dent))
+		return;
+
+	debugfs_create_file("desc", 0444, dent, cdev, &debug_desc_ops);
+}
+#endif /*                                             */
 
 static int composite_bind(struct usb_gadget *gadget,
 		struct usb_gadget_driver *gdriver)
@@ -1730,6 +1965,10 @@ static int composite_bind(struct usb_gadget *gadget,
 	if (composite->needs_serial && !cdev->desc.iSerialNumber)
 		WARNING(cdev, "userspace failed to provide iSerialNumber\n");
 
+#if defined CONFIG_DEBUG_FS && defined CONFIG_USB_G_LGE_ANDROID
+	composite_debugfs_init(cdev);
+#endif
+
 	INFO(cdev, "%s ready\n", composite->name);
 	return 0;
 
@@ -1761,7 +2000,9 @@ composite_suspend(struct usb_gadget *gadget)
 
 	cdev->suspended = 1;
 
+#ifndef CONFIG_LGE_PM
 	usb_gadget_vbus_draw(gadget, 2);
+#endif
 }
 
 static void

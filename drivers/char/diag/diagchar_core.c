@@ -47,6 +47,10 @@
 #include <linux/compat.h>
 #endif
 
+#ifdef CONFIG_LGE_DIAG_BYPASS
+#include "lg_diag_bypass.h"
+#endif
+
 MODULE_DESCRIPTION("Diag Char Driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
@@ -901,6 +905,8 @@ static int diag_switch_logging(int requested_mode)
 	int success = -EINVAL;
 	int temp = 0, status = 0;
 
+	int index = 0;
+	unsigned long spin_lock_flags;
 	switch (requested_mode) {
 	case USB_MODE:
 	case MEMORY_DEVICE_MODE:
@@ -958,6 +964,13 @@ static int diag_switch_logging(int requested_mode)
 			}
 		}
 	} else if (driver->logging_mode == SOCKET_MODE) {
+		for (index = 0; index < MAX_HSIC_DATA_CH; index++) {
+			if ((diag_bridge[index].usb_connected == 1) && (diag_hsic[index].count_hsic_pool == N_MDM_WRITE)) {
+				spin_lock_irqsave(&diag_hsic[index].hsic_spinlock,spin_lock_flags);
+				diag_hsic[index].count_hsic_pool = 0;
+				spin_unlock_irqrestore(&diag_hsic[index].hsic_spinlock,spin_lock_flags);
+			}
+		}
 		driver->socket_process = current;
 	} else if (driver->logging_mode == CALLBACK_MODE) {
 		driver->callback_process = current;
@@ -1703,6 +1716,12 @@ exit:
 		diag_ws_on_copy_complete(DIAG_WS_MD);
 	}
 	mutex_unlock(&driver->diagchar_mutex);
+
+#ifdef CONFIG_USB_G_LGE_ANDROID_DIAG_OSP_SUPPORT
+	driver->diag_read_status = 1;
+	wake_up_interruptible(&driver->diag_read_wait_q);
+#endif
+
 	return ret;
 }
 
@@ -1714,6 +1733,9 @@ static ssize_t diagchar_write(struct file *file, const char __user *buf,
 	uint8_t index;
 #ifdef DIAG_DEBUG
 	int length = 0, i;
+#endif
+#ifdef CONFIG_LGE_DM_APP
+	char *buf_cmp;
 #endif
 	struct diag_send_desc_type send = { NULL, NULL, DIAG_STATE_START, 0 };
 	struct diag_hdlc_dest_type enc = { NULL, NULL, 0 };
@@ -1745,11 +1767,25 @@ static ssize_t diagchar_write(struct file *file, const char __user *buf,
 	    (!((pkt_type == DCI_DATA_TYPE) ||
 	       ((pkt_type & (DATA_TYPE_DCI_LOG | DATA_TYPE_DCI_EVENT)) == 0))
 		&& (driver->logging_mode == USB_MODE) &&
+#ifdef CONFIG_LGE_DIAG_BYPASS
+		(!driver->usb_connected) && (!lge_bypass_status()))) {
+#else
 		(!driver->usb_connected))) {
+#endif
 		/*Drop the diag payload */
 		return -EIO;
 	}
 #endif /* DIAG over USB */
+
+#ifdef CONFIG_LGE_DM_APP
+	if (driver->logging_mode == DM_APP_MODE) {
+		/* only diag cmd #250 for supporting testmode tool */
+		buf_cmp = (char *)buf + 4;
+		if (*(buf_cmp) != 0xFA)
+			return 0;
+	}
+#endif
+
 	if (pkt_type == DCI_DATA_TYPE) {
 		user_space_data = diagmem_alloc(driver, payload_size,
 								POOL_TYPE_USER);
@@ -2070,12 +2106,18 @@ static ssize_t diagchar_write(struct file *file, const char __user *buf,
 #ifdef DIAG_DEBUG
 	pr_debug("diag: Already used bytes in buffer %d, and"
 	" incoming payload size is %d\n", driver->used, payload_size);
+#ifdef CONFIG_USB_G_LGE_ANDROID
+	if (buf_hdlc) {
+#endif
 	printk(KERN_DEBUG "hdlc encoded data is -->\n");
 	for (i = 0; i < payload_size + 8; i++) {
 		printk(KERN_DEBUG "\t %x \t", *(((unsigned char *)buf_hdlc)+i));
 		if (*(((unsigned char *)buf_hdlc)+i) != 0x7e)
 			length++;
 	}
+#ifdef CONFIG_USB_G_LGE_ANDROID
+	}
+#endif
 #endif
 	mutex_lock(&driver->diagchar_mutex);
 	if (!buf_hdlc)
@@ -2463,8 +2505,13 @@ static int diagchar_setup_cdev(dev_t devno)
 		return -1;
 	}
 
+#ifdef CONFIG_MACH_LGE
+	driver->diag_dev = device_create(driver->diagchar_class, NULL, devno,
+					 (void *)driver, "diag_lge");
+#else
 	driver->diag_dev = device_create(driver->diagchar_class, NULL, devno,
 					 (void *)driver, "diag");
+#endif
 
 	if (!driver->diag_dev)
 		return -EIO;

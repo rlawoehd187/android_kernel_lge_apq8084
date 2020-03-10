@@ -59,25 +59,53 @@ TRACE_EVENT(bus_update_request,
 		(unsigned long long)__entry->ib)
 );
 
+TRACE_EVENT(bus_update_request_end,
+
+	TP_PROTO(int sec, int nsec, const char *name),
+
+	TP_ARGS(sec, nsec, name),
+
+	TP_STRUCT__entry(
+		__field(int, sec)
+		__field(int, nsec)
+		__string(name, name)
+	),
+
+	TP_fast_assign(
+		__entry->sec = sec;
+		__entry->nsec = nsec;
+		__assign_str(name, name);
+	),
+
+	TP_printk("time= %d.%d name=%s ",
+		__entry->sec,
+		__entry->nsec,
+		__get_str(name))
+);
+
+
 TRACE_EVENT(bus_bimc_config_limiter,
 
-	TP_PROTO(int mas_id, unsigned long long cur_lim_bw),
+	TP_PROTO(int mas_id, unsigned long long cur_lim_bw, int mode),
 
-	TP_ARGS(mas_id, cur_lim_bw),
+	TP_ARGS(mas_id, cur_lim_bw, mode),
 
 	TP_STRUCT__entry(
 		__field(int, mas_id)
 		__field(u64, cur_lim_bw)
+		__field(int, mode)
 	),
 
 	TP_fast_assign(
 		__entry->mas_id = mas_id;
 		__entry->cur_lim_bw = cur_lim_bw;
+		__entry->mode = mode;
 	),
 
-	TP_printk("Master=%d cur_lim_bw=%llu",
+	TP_printk("Master=%d cur_lim_bw=%llu Mode %d",
 		__entry->mas_id,
-		(unsigned long long)__entry->cur_lim_bw)
+		(unsigned long long)__entry->cur_lim_bw,
+		__entry->mode)
 );
 
 TRACE_EVENT(bus_avail_bw,

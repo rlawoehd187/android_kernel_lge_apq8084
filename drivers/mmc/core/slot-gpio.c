@@ -21,11 +21,18 @@ struct mmc_gpio {
 	int ro_gpio;
 	int cd_gpio;
 	char *ro_label;
-	char cd_label[0];
 	bool status;
+	char cd_label[0];
 };
 
+#ifdef CONFIG_MACH_LGE
+/*           
+                                                   
+ */
+int mmc_gpio_get_status(struct mmc_host *host)
+#else
 static int mmc_gpio_get_status(struct mmc_host *host)
+#endif
 {
 	int ret = -ENOSYS;
 	struct mmc_gpio *ctx = host->slot.handler_priv;

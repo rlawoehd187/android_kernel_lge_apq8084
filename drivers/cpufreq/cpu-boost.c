@@ -262,8 +262,6 @@ static void do_input_boost(struct work_struct *work)
 		ret = cpufreq_get_policy(&policy, i);
 		if (ret)
 			continue;
-		if (policy.cur >= input_boost_freq)
-			continue;
 
 		cancel_delayed_work_sync(&i_sync_info->input_boost_rem);
 		i_sync_info->input_boost_min = input_boost_freq;

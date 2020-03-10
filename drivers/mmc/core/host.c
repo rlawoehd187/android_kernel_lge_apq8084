@@ -883,6 +883,13 @@ int mmc_add_host(struct mmc_host *host)
 	if (err)
 		return err;
 
+	// enable async suspend
+	/*Enables the asynchronous suspend of card and class device.
+	  This would enable both these devices to suspend in separate
+	  respective threads, thus allowing other devices to suspend
+	  concurrently.*/
+	device_enable_async_suspend(&host->class_dev);
+
 	led_trigger_register_simple(dev_name(&host->class_dev), &host->led);
 
 #ifdef CONFIG_DEBUG_FS
@@ -902,7 +909,7 @@ int mmc_add_host(struct mmc_host *host)
 	err = sysfs_create_group(&host->class_dev.kobj, &dev_attr_grp);
 	if (err)
 		pr_err("%s: failed to create sysfs group with err %d\n",
-							 __func__, err);
+				__func__, err);
 
 	mmc_start_host(host);
 	if (!(host->pm_flags & MMC_PM_IGNORE_PM_NOTIFY))

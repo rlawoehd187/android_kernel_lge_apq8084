@@ -27,6 +27,7 @@
 #include "mdss_dsi.h"
 #include "mdss_panel.h"
 #include "mdss_debug.h"
+#include "mdss_mdp.h"
 
 #define VSYNC_PERIOD 17
 
@@ -353,6 +354,10 @@ void mdss_dsi_host_init(struct mdss_panel_data *pdata)
 	/* DSI_ERR_INT_MASK0 */
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x010c, 0x13ff3fe0);
 
+#ifdef CONFIG_MACH_LGE
+	/* disable force_mipi_clk_hs until panel initializing */
+	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0xac, 0x0);
+#endif
 	intr_ctrl |= DSI_INTR_ERROR_MASK;
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + 0x0110,
 				intr_ctrl); /* DSI_INTL_CTRL */
@@ -1414,6 +1419,9 @@ static int dsi_event_thread(void *data)
 	struct mdss_dsi_event *ev;
 	struct dsi_event_q *evq;
 	struct mdss_dsi_ctrl_pdata *ctrl;
+#ifdef CONFIG_MACH_LGE
+	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
+#endif
 	unsigned long flag;
 	struct sched_param param;
 	u32 todo = 0;
@@ -1452,7 +1460,16 @@ static int dsi_event_thread(void *data)
 			MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0", "dsi1",
 						"edp", "hdmi", "panic");
 		}
-
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+		if (todo & DSI_EV_DSI_FIFO_EMPTY) {
+			mdss_dsi_sw_reset(ctrl, true);
+#ifdef CONFIG_MACH_LGE
+			mctrl = mdss_dsi_get_ctrl_by_index(DSI_CTRL_0);
+			if (mctrl)
+				mdss_dsi_sw_reset(mctrl, true);
+#endif
+		}
+#endif
 		if (todo & DSI_EV_MDP_BUSY_RELEASE) {
 			spin_lock_irqsave(&ctrl->mdp_lock, flag);
 			ctrl->mdp_busy = false;
@@ -1461,7 +1478,9 @@ static int dsi_event_thread(void *data)
 			spin_unlock_irqrestore(&ctrl->mdp_lock, flag);
 
 			/* enable dsi error interrupt */
+			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 			mdss_dsi_err_intr_ctrl(ctrl, DSI_INTR_ERROR_MASK, 1);
+			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 		}
 
 	}
@@ -1531,6 +1550,10 @@ void mdss_dsi_fifo_status(struct mdss_dsi_ctrl_pdata *ctrl)
 		pr_err("%s: status=%x\n", __func__, status);
 		if (status & 0x0080)  /* CMD_DMA_FIFO_UNDERFLOW */
 			dsi_send_events(ctrl, DSI_EV_MDP_FIFO_UNDERFLOW);
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+		if (status & 0x11110000) /* DLN_FIFO_EMPTY */
+			dsi_send_events(ctrl, DSI_EV_DSI_FIFO_EMPTY);
+#endif
 	}
 }
 

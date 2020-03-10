@@ -286,6 +286,49 @@ config BACKLIGHT_MAX8925
 	  If you have a LCD backlight connected to the WLED output of MAX8925
 	  WLED output, say Y here to enable this driver.
 
+config BACKLIGHT_MAX77819
+	tristate "Backlight driver for MAX77819"
+	depends on MFD_MAX77819
+	help
+	  If you have a LCD backlight connected to the WLED output of MAX77819
+	  WLED output, say Y here to enable this driver.
+
+choice
+	prompt "WLED current map"
+	depends on BACKLIGHT_MAX77819
+config BACKLIGHT_MAX77819_CURRENT_MAP_ALL
+	bool "All"
+config BACKLIGHT_MAX77819_CURRENT_MAP_R11E6
+	bool "Rui 11/6 exponential"
+config BACKLIGHT_MAX77819_CURRENT_MAP_J8E6
+	bool "Jayden 8/6 exponential"
+config BACKLIGHT_MAX77819_CURRENT_MAP_J8E8
+	bool "Jayden 8/8 exponential"
+config BACKLIGHT_MAX77819_CURRENT_MAP_J11E8
+	bool "Jayden 11/8 exponential"
+endchoice
+
+config BACKLIGHT_LM3697
+	tristate "Backlight driver for TI LM3697"
+	depends on BACKLIGHT_CLASS_DEVICE && I2C
+	help
+	  Say Y to enable the backlight driver for TI LM3697.
+	  Up to 3 backlight strings and 11 bit dimming is supported.
+	  PWM brightness control is also supported.
+
+config MACH_LGE_BACKLIGHT_SUPPORT
+	tristate "SUPPORT Backlight Driver Abstraction"
+	depends on BACKLIGHT_CLASS_DEVICE && I2C
+	help
+	  If you have a backlight on the device and support backlight device abstraction,
+	  enable this feature.
+
+config LGE_FOTA_SILENT_RESET
+	tristate "Support Silent Reset for FOTA Update"
+	help
+	  If you want to turn off backlight when FOTA update,
+	  enable this feature.
+
 config BACKLIGHT_APPLE
        tristate "Apple Backlight Driver"
        depends on X86 && ACPI

@@ -1894,7 +1894,6 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON, false);
 
-
 	bpp = fbi->var.bits_per_pixel / 8;
 	offset = fbi->var.xoffset * bpp +
 		 fbi->var.yoffset * fbi->fix.line_length;
@@ -1911,11 +1910,13 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 		goto pan_display_error;
 	}
 
+#ifndef CONFIG_MACH_LGE
 	ret = mdss_iommu_ctrl(1);
 	if (IS_ERR_VALUE(ret)) {
 		pr_err("IOMMU attach failed\n");
 		goto pan_display_error;
 	}
+#endif
 
 	ret = mdss_mdp_overlay_get_fb_pipe(mfd, &pipe,
 					MDSS_MDP_MIXER_MUX_LEFT);
@@ -1967,12 +1968,16 @@ static void mdss_mdp_overlay_pan_display(struct msm_fb_data_type *mfd)
 	    (fbi->var.activate & FB_ACTIVATE_FORCE))
 		mfd->mdp.kickoff_fnc(mfd, NULL);
 
+#ifndef CONFIG_MACH_LGE
 	mdss_iommu_ctrl(0);
+#endif
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	return;
 
 pan_display_error:
+#ifndef CONFIG_MACH_LGE
 	mdss_iommu_ctrl(0);
+#endif
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF, false);
 	mutex_unlock(&mdp5_data->ov_lock);
 }
@@ -2053,11 +2058,17 @@ static ssize_t dynamic_fps_sysfs_rda_dfps(struct device *dev,
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	mutex_lock(&mdp5_data->dfps_lock);
+#endif
 	ret = snprintf(buf, PAGE_SIZE, "%d\n",
 		       pdata->panel_info.mipi.frame_rate);
 	pr_debug("%s: '%d'\n", __func__,
 		pdata->panel_info.mipi.frame_rate);
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	mutex_unlock(&mdp5_data->dfps_lock);
+#endif
 	return ret;
 } /* dynamic_fps_sysfs_rda_dfps */
 
@@ -2085,15 +2096,27 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	mutex_lock(&mdp5_data->dfps_lock);
+#endif
 	if (dfps == pdata->panel_info.mipi.frame_rate) {
 		pr_debug("%s: FPS is already %d\n",
 			__func__, dfps);
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+		mutex_unlock(&mdp5_data->dfps_lock);
+#endif
 		return count;
 	}
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	if (dfps < 38) {
+		pr_err("Unsupported FPS. Configuring to min_fps = 38\n");
+		dfps = 38;
+#else
 	if (dfps < 30) {
 		pr_err("Unsupported FPS. Configuring to min_fps = 30\n");
 		dfps = 30;
+#endif
 		rc = mdss_mdp_ctl_update_fps(mdp5_data->ctl, dfps);
 	} else if (dfps > 60) {
 		pr_err("Unsupported FPS. Configuring to max_fps = 60\n");
@@ -2103,13 +2126,19 @@ static ssize_t dynamic_fps_sysfs_wta_dfps(struct device *dev,
 		rc = mdss_mdp_ctl_update_fps(mdp5_data->ctl, dfps);
 	}
 	if (!rc) {
-		pr_info("%s: configured to '%d' FPS\n", __func__, dfps);
+		pr_debug("%s: configured to '%d' FPS\n", __func__, dfps);
 	} else {
 		pr_err("Failed to configure '%d' FPS. rc = %d\n",
 							dfps, rc);
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+		mutex_unlock(&mdp5_data->dfps_lock);
+#endif
 		return rc;
 	}
 	pdata->panel_info.new_fps = dfps;
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	mutex_unlock(&mdp5_data->dfps_lock);
+#endif
 	return count;
 } /* dynamic_fps_sysfs_wta_dfps */
 
@@ -2887,6 +2916,10 @@ static int __handle_overlay_prepare(struct msm_fb_data_type *mfd,
 
 	bool sort_needed = mdata->has_src_split && (num_ovs > 1);
 
+#ifdef CONFIG_MACH_LGE
+	bool bw_limit = false;
+#endif
+
 	ret = mutex_lock_interruptible(&mdp5_data->ov_lock);
 	if (ret)
 		return ret;
@@ -2952,6 +2985,13 @@ static int __handle_overlay_prepare(struct msm_fb_data_type *mfd,
 		else
 			is_single_layer = (left_lm_ovs == 1);
 
+#ifdef CONFIG_MACH_LGE
+		/* MDP_BLUR is used only MDP3 so we can use it on MDSS to check bw limit */
+		if (req->flags & MDP_BLUR) {
+			pr_debug("[QC] B/W limit flag detected !!!\n");
+			bw_limit = true;
+		}
+#endif
 		req->z_order += MDSS_MDP_STAGE_0;
 		ret = mdss_mdp_overlay_pipe_setup(mfd, req, &pipe,
 			left_blend_pipe, is_single_layer);
@@ -3002,6 +3042,10 @@ validate_exit:
 			ret, num_ovs, ovlist->processed_overlays, left_lm_ovs,
 			right_lm_ovs);
 		mdss_mdp_overlay_release(mfd, new_reqs);
+#ifdef CONFIG_MACH_LGE
+	} else {
+		mdp5_data->bw_limit = bw_limit;
+#endif
 	}
 	mutex_unlock(&mdp5_data->ov_lock);
 
@@ -3279,6 +3323,7 @@ static int mdss_mdp_overlay_on(struct msm_fb_data_type *mfd)
 		mdp5_data->ctl = ctl;
 	}
 
+	pr_info("fb%d UNBLANK +\n", mfd->index);
 	if (mdss_fb_is_power_on(mfd)) {
 		pr_debug("panel was never turned off\n");
 		rc = mdss_mdp_ctl_start(mdp5_data->ctl, false);
@@ -3307,6 +3352,7 @@ panel_on:
 		goto end;
 	}
 
+	pr_info("fb%d UNBLANK -\n", mfd->index);
 end:
 	return rc;
 }
@@ -3369,6 +3415,7 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		mdss_mdp_overlay_kickoff(mfd, NULL);
 	}
 
+	pr_info("fb%d BLANK +", mfd->index);
 	/*
 	 * If retire fences are still active wait for a vsync time
 	 * for retire fence to be updated.
@@ -3420,6 +3467,7 @@ ctl_stop:
 	if (rc)
 		pr_err("unable to suspend w/pm_runtime_put (%d)\n", rc);
 
+	pr_info("fb%d BLANK -", mfd->index);
 	return rc;
 }
 
@@ -3712,6 +3760,10 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 	INIT_LIST_HEAD(&mdp5_data->rot_proc_list);
 	mutex_init(&mdp5_data->list_lock);
 	mutex_init(&mdp5_data->ov_lock);
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	/*Lock to make sure atomic read/write on dfps node*/
+	mutex_init(&mdp5_data->dfps_lock);
+#endif
 	mdp5_data->hw_refresh = true;
 	mdp5_data->overlay_play_enable = true;
 

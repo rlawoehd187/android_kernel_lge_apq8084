@@ -307,6 +307,17 @@ config LEDS_MSM_GPIO_FLASH
 	  To compile this driver as a module, choose M here: the module will
 	  be called leds-gpio-flash.
 
+config LEDS_PMA8084_EMOTIONAL
+	tristate "Support for EMOTIONAL LEDs using pma8084"
+	help
+	  This enables support for emotional LED using pma8084.
+
+config LEDS_WINDOW_COLOR
+	tristate "LED support for adjusting led brightness according to window color"
+	help
+	  This enables support for adjusting led brightness according to window color.
+	  Say Y to adjust led brightness according to window color.
+
 config LEDS_WM831X_STATUS
 	tristate "LED support for status LEDs on WM831x PMICs"
 	depends on LEDS_CLASS
@@ -498,6 +509,11 @@ config LEDS_BLINKM
 	help
 	  This option enables support for the BlinkM RGB LED connected
 	  through I2C. Say Y to enable support for the BlinkM LED.
+
+config LGE_QPNP_LEDS
+	tristate "LED Support for PMIC GPIO connected LEDs"
+	depends on LEDS_CLASS
+	default n
 
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"

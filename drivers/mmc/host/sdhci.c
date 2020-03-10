@@ -46,6 +46,13 @@
 
 #define MAX_TUNING_LOOP 40
 
+#if defined(CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL)
+enum {
+	CMD_CRC_ERROR = 1,
+	DAT_CRC_ERROR
+};
+#endif
+
 static unsigned int debug_quirks = 0;
 static unsigned int debug_quirks2;
 
@@ -2759,6 +2766,98 @@ static void sdhci_tuning_timer(unsigned long data)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+static int lge_asctodec(char *buff, int num)
+{
+	int i, j;
+	int val, tmp;
+	val=0;
+	for (i = 0; i < num; i++) {
+		tmp = 1;
+		for (j = 0; j < (num - (i + 1)); j++) {
+			tmp = tmp * 10;
+		}   
+		val += tmp * (buff[i] - 48); 
+	}
+	return val;
+}
+
+static void record_crc_error(int crctype, char *hostname)
+{
+	struct file *filp;
+	char bufs[10], asc_num[10];
+	int ret;
+	int count;
+	int num_crc;
+	int tmp;
+	int i;
+	char filename[256] = {0,};
+	mm_segment_t old_fs = get_fs();
+
+	if (crctype == CMD_CRC_ERROR) {
+		sprintf(filename, "/data/data/com.example.fs_bench/files/%s_crc_error.txt", hostname);		
+	} else if (crctype == DAT_CRC_ERROR) {
+		sprintf(filename, "/data/data/com.example.fs_bench/files/%s_dat_error.txt", hostname);		
+	}
+
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDWR, S_IRUSR|S_IWUSR);
+	if (IS_ERR(filp)) {
+		pr_err("[DRV_STR] open error : %ld\n", IS_ERR(filp));
+		return;
+	}
+	count = 0;
+
+	do {
+		ret = vfs_read(filp, &bufs[count], 1, &filp->f_pos);
+		count++;
+	} while (ret != 0);
+	count--;
+	bufs[count]=0;
+	num_crc = lge_asctodec(bufs, count);
+	num_crc = num_crc+1;
+	count = 1;
+	tmp = num_crc;
+	do {
+		tmp = tmp/10;
+		if (!(tmp<1))
+			count++;
+		else
+			break;
+	} while (1);  
+
+	for (i = 0; i < count; i++) {
+		tmp = num_crc%10;
+		asc_num[count-(i+1)] = tmp + '0';
+		num_crc = num_crc/10;
+	}
+	asc_num[count]=0;
+	pr_info("[DRV_STR] ascii val : %s\n", asc_num);
+
+	filp->f_pos=0;
+
+	vfs_write(filp, asc_num, count, &filp->f_pos);
+	filp_close(filp, NULL);
+	set_fs(old_fs);
+	return;
+}
+
+static void mmc0_record_crc_data_error(struct work_struct *work)
+{
+	pr_info("[DRV_STR] [mmc0] DATA CRC Occured!!!\n");
+	record_crc_error(DAT_CRC_ERROR, "mmc0");
+}
+static DECLARE_WORK(mmc0_lge_crc_data_workqueue, mmc0_record_crc_data_error);
+
+static void mmc1_record_crc_data_error(struct work_struct *work)
+{
+	pr_info("[DRV_STR] [mmc1] DATA CRC Occured!!!\n");
+	record_crc_error(DAT_CRC_ERROR, "mmc1");
+}
+static DECLARE_WORK(mmc1_lge_crc_data_workqueue, mmc1_record_crc_data_error);
+#endif
+
 /*****************************************************************************\
  *                                                                           *
  * Interrupt handling                                                        *
@@ -2951,8 +3050,28 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 			    (command != MMC_SEND_TUNING_BLOCK_HS200) &&
 			    (command != MMC_SEND_TUNING_BLOCK)) {
 				pr_msg = true;
-				if (intmask & SDHCI_INT_DATA_CRC)
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+				if (intmask & SDHCI_INT_DATA_CRC) {
+					pr_err("%s : [CRC] Data CRC occured!!!! \n",
+							mmc_hostname(host->mmc));
+					pr_err("intmask : 0x%08X \n", intmask);
+
+					if (!strcmp(mmc_hostname(host->mmc),
+								"mmc0"))
+						queue_work(system_nrt_wq,
+								&mmc0_lge_crc_data_workqueue);
+
+					if (!strcmp(mmc_hostname(host->mmc),
+								"mmc1"))
+						queue_work(system_nrt_wq,
+								&mmc1_lge_crc_data_workqueue);
+
 					host->flags |= SDHCI_NEEDS_RETUNING;
+				}
+#else
+                if (intmask & SDHCI_INT_DATA_CRC)
+                    host->flags |= SDHCI_NEEDS_RETUNING;
+#endif
 			}
 		} else {
 			pr_msg = true;

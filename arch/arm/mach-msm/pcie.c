@@ -38,6 +38,11 @@
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
 
+/* use async_schedule to reduce boot-up time */
+#ifdef CONFIG_LGE_MSM_PCIE
+#include <linux/async.h>
+#endif
+
 #include "pcie.h"
 
 /* Root Complex Port vendor/device IDs */
@@ -1747,6 +1752,15 @@ static struct platform_driver msm_pcie_driver = {
 	},
 };
 
+#ifdef CONFIG_LGE_MSM_PCIE
+static void __init pcie_init_async(void *data, async_cookie_t cookie)
+{
+	/*                                                         */
+	async_synchronize_cookie(cookie);
+	platform_driver_register(&msm_pcie_driver);
+}
+#endif
+
 static int __init pcie_init(void)
 {
 	int ret = 0, i;
@@ -1788,7 +1802,11 @@ static int __init pcie_init(void)
 		spin_lock_init(&msm_pcie_dev[i].wakeup_lock);
 	}
 
+#ifdef CONFIG_LGE_MSM_PCIE
+	async_schedule(pcie_init_async, NULL);
+#else
 	ret = platform_driver_register(&msm_pcie_driver);
+#endif
 
 	return ret;
 }
@@ -1871,6 +1889,10 @@ static int msm_pcie_pm_suspend(struct pci_dev *dev,
 
 	msm_pcie_disable(pcie_dev, PM_PIPE_CLK | PM_CLK | PM_VREG);
 
+#ifdef CONFIG_LGE_MSM_PCIE
+	pr_info("PCIe:%d in low power mode\n", pcie_dev->rc_idx);
+#endif
+
 	return ret;
 }
 
@@ -1929,6 +1951,10 @@ static int msm_pcie_pm_resume(struct pci_dev *dev,
 			pci_restore_state(dev);
 		}
 	}
+
+#ifdef CONFIG_LGE_MSM_PCIE
+	pr_info("PCIe:%d exited from low power mode\n", pcie_dev->rc_idx);
+#endif
 
 	return ret;
 }

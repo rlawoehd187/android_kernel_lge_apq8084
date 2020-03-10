@@ -447,7 +447,9 @@ static struct msm_cam_clk_info cam_8960_clk_info[] = {
 };
 
 static struct msm_cam_clk_info cam_8974_clk_info[] = {
-	[SENSOR_CAM_MCLK] = {"cam_src_clk", 19200000},
+	/*                              */
+	[SENSOR_CAM_MCLK] = {"cam_src_clk", 24000000},
+	/*                              */
 	[SENSOR_CAM_CLK] = {"cam_clk", 0},
 };
 
@@ -678,7 +680,12 @@ ERROR3:
 ERROR2:
 	kfree(power_info->cam_vreg);
 ERROR1:
-	kfree(power_info->power_setting);
+/*                              */
+	if (power_info->power_setting)
+		kfree(power_info->power_setting);
+	if (power_info->power_down_setting)
+		kfree(power_info->power_down_setting);
+/*                              */
 	return rc;
 }
 
@@ -997,7 +1004,7 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 
 	rc = of_property_read_string(of_node, "qcom,eeprom-name",
 		&eb_info->eeprom_name);
-	CDBG("%s qcom,eeprom-name %s, rc %d\n", __func__,
+	pr_err("%s qcom,eeprom-name %s, rc %d\n", __func__,
 		eb_info->eeprom_name, rc);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);

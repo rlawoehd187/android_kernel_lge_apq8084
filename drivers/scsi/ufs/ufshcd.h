@@ -656,6 +656,9 @@ extern int ufshcd_dme_set_attr(struct ufs_hba *hba, u32 attr_sel,
 extern int ufshcd_dme_get_attr(struct ufs_hba *hba, u32 attr_sel,
 			       u32 *mib_val, u8 peer);
 
+#define	ANDROID_BOOT_DEV_MAX	30
+extern char android_boot_dev[ANDROID_BOOT_DEV_MAX];
+
 /* UIC command interfaces for DME primitives */
 #define DME_LOCAL	0
 #define DME_PEER	1

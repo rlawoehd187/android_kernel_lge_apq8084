@@ -556,6 +556,13 @@ config HAPTIC_ISA1200
 	default n
 	help
 	  The ISA1200 is a high performance enhanced haptic driver.
+config LGE_SM100
+    bool "lge sm100 vibrator support"
+        depends on ANDROID_TIMED_OUTPUT
+        default n
+        help
+          This option enalbes device driver support for SM100 Vibrator driver.
+          Some functions should be given by platform data for enable PWM, Motor IC, etc.
 
 config QSEECOM
 	tristate "Qualcomm Secure Execution Communicator driver"
@@ -608,6 +615,30 @@ config APQ8084_DOCKING_STATION
 	help
 	  This option enables support for the USB and Ethernet ports found on
 	  the QTI APQ8084 Docking Station.
+
+config MAX77819_MOTOR
+	tristate "MAX77819 Motor Support"
+	depends on MFD_MAX77819
+	help
+	  If you say yes here you get support for the motor driver of
+	  Maxim MAX77819 PMIC.
+
+config LGE_IRRC
+	tristate "LGE_IRRC"
+	default n
+	help
+	  If you say yes here you get support for IrRC
+
+config BU52031NVX
+	tristate "Cradle BU52301NVX support"
+	default n
+	help
+	  This option enable device driver support for the cradle
+	  on the PM0xxx chips. The cradle is controlled using the PM8xxx gpio
+
+config TSPDRV
+	bool "tspdrv"
+	default n
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

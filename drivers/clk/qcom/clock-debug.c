@@ -211,7 +211,7 @@ static int fmax_rates_show(struct seq_file *m, void *unused)
 
 	int vdd_level = find_vdd_level(clock, clock->rate);
 	if (vdd_level < 0) {
-		seq_printf(m, "could not find_vdd_level for %s, %ld\n",
+		seq_printf(m, "could not find_vdd_level for %s, %lu\n",
 			clock->dbg_name, clock->rate);
 		return 0;
 	}
@@ -270,11 +270,11 @@ static int clock_debug_print_clock(struct clk *c, struct seq_file *m)
 	clock_debug_output(m, 0, "\t");
 	do {
 		if (c->vdd_class)
-			clock_debug_output(m, 1, "%s%s:%u:%u [%ld, %lu]", start,
+			clock_debug_output(m, 1, "%s%s:%u:%u [%lu, %lu]", start,
 				c->dbg_name, c->prepare_count, c->count,
 				c->rate, c->vdd_class->cur_level);
 		else
-			clock_debug_output(m, 1, "%s%s:%u:%u [%ld]", start,
+			clock_debug_output(m, 1, "%s%s:%u:%u [%lu]", start,
 				c->dbg_name, c->prepare_count, c->count,
 				c->rate);
 		start = " -> ";

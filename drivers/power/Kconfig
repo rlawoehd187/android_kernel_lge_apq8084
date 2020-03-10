@@ -496,6 +496,137 @@ config QPNP_LINEAR_CHARGER
 	  detection and charging. The driver also offers relevant information
 	  to userspace via the power supply framework.
 
+config LGE_PM
+	tristate "APQ8084 LGE Feature"
+	depends on SPMI
+	help
+	  Say Y here to enable support for pma8084 chip lge feature.
+	  LGE_PM releasted changed.
+	  Power Management, Battery charging, Battery Monitoring System
+	  with battery FET and fuel gauge.
+
+config LGE_PM_CHARGING_TEMP_SCENARIO
+	depends on LGE_PM
+	default n
+	bool "LGE CHAGING TEMP SCENARIO Configuraion"
+	help
+	  LGE CHARGER TEMP SCENARIO Configuration
+
+config LGE_PM_BATTERY_MAX17048_FUELGAUGE
+	tristate "Maxim MAX17048 fuel gauging external driver"
+	depends on I2C
+	default n
+	help
+	  MAX17048 is fuel-gauge systems for lithium-ion (Li+) batteries
+	  in handheld and portable equipment. The MAX17048 is configured
+	  to operate with a single lithium cell
+
+config LGE_PM_BATTERY_ID_CHECKER
+	tristate "Virtual Device for LGE Battery ID Checker"
+	depends on LGE_PM
+	default n
+	help
+	  Say Y to enable LGE Battery ID Checker. Manufacturer have their own
+	  systematic identification of cell types, and protect the system from
+	  problems as using non-standard or unexpected types. so cross-
+	  reference battery identification are useful to identify.
+
+config LGE_PM_CHARGING_MAX77819_CHARGER
+	tristate "Maxim MAX77819 PMIC battery charger driver"
+	depends on MFD_MAX77819
+	default n
+	help
+	  Say Y to enable support for the MAX77819 PMIC battery charger.
+
+config LGE_PM_CHARGING_BQ24296_CHARGER
+	tristate "bq24296 charger"
+	depends on I2C
+	default n
+	help
+	  Say Y to enable support for the BQ24296 switching mode based charger
+	  and sysfs. The driver supports controlling charger-enable and
+	  current limiting capabilities. The driver also lets the
+	  BQ24296 be operated as a slave device via the power supply
+	  framework.
+
+config LGE_PM_CHARGING_SMART_CHARGING
+	tristate "smart charging driver"
+	default n
+	help
+	  Say Y to enable support for smart charging
+
+config LGE_PM_CHARGING_UNIFIED_WLC
+	tristate "Wireless charger control driver"
+	default n
+	help
+	  Say Y to enable wireless charger, IDT9205A or BQ51020.
+
+config LGE_PM_CHARGING_UNIFIED_WLC_ALIGNMENT
+	tristate "wireless charger alignment"
+	depends on LGE_PM_CHARGING_UNIFIED_WLC
+	default n
+	help
+	  wireless charger alignment
+
+config LGE_PM_CHARGING_UNIFIED_WLC_ALIGNMENT_IDT9025A
+	tristate "wireless charger alignment used IDT9025A"
+	depends on LGE_PM_CHARGING_UNIFIED_WLC
+	select LGE_PM_CHARGING_UNIFIED_WLC_ALIGNMENT
+	default n
+	help
+	  wireless charger alignment
+
+config LGE_PM_VZW_POWER_REQ
+    tristate "implementation power requirements of Verizon"
+    depends on BQ24296_CHARGER
+    default n
+    help
+	  power requirements for verizon
+
+config LGE_PM_FACTORY_SAFETY_TIMER_DISABLE
+	bool "Disble safety timer"
+	depends on LGE_PM
+	default n
+	help
+	  Say Y to disable safety timer.
+	  This feature is enabled for convenience at Q department,
+	  except for user mode.
+
+config LGE_PM_CHARGING_SUPPORT_PHIHONG
+	tristate "Support Phihong travel charger"
+	depends on BQ24296_CHARGER
+	default n
+	help
+	  Chargers which is not support AICL need this feature.
+
+config LGE_PM_CHARGING_LLK_MODE
+    tristate "implementation power requirements of retail mode"
+	default n
+    help
+		power requirements for retail mode
+
+config LGE_PM_BATTERY_LOW_BATT_LIMIT
+	bool "Support Low Battery Limit"
+	depends on LGE_PM
+	default n
+	help
+	  Say y to include SOC info in SMEM_BATT_INFO
+
+config LGE_PM_BATTERY_CUT_OFF_3_4V
+	bool "Cut off voltage is 3.4V"
+	depends on LGE_PM
+	default n
+	help
+	  Say y to adopt 3.4V cutoff voltage for LGC, Hitachi
+
+config LGE_PM_CHARGING_AUDIO_RESTRICT
+	bool "Audio restrice charging enable"
+	depends on LGE_PM
+	default n
+	help
+	  Say y to enable audio restrict charging.
+	  This feature is enabled for decreasing audio noise during charging and call.
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY

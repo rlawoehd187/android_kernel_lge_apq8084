@@ -1237,7 +1237,7 @@
 		qcom,hw-sel = "BIMC";
 		qcom,rpm-en;
 		qcom,nfab = <6>;
-		qcom,nr-lim-thresh = <1638400>;
+		qcom,nr-lim-thresh = <1920000>;
 		qcom,eff-fact = <60>;
 
 		coresight-id = <55>;

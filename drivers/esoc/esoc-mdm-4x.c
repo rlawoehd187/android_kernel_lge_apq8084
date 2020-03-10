@@ -9,7 +9,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+#define DEBUG
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/jiffies.h>
@@ -21,7 +21,15 @@
 #include <linux/sched.h>
 #include <soc/qcom/sysmon.h>
 #include <mach/gpiomux.h>
+#include <linux/fcntl.h>
+#include <linux/syscalls.h>
 #include "esoc.h"
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+#include <asm/uaccess.h>
+#include <linux/syscalls.h>
+#include <mach/board_lge.h>
+#endif
 
 #define MDM_PBLRDY_CNT			20
 #define INVALID_GPIO			(-1)
@@ -33,12 +41,15 @@
 #define MDM9x35_DUAL_LINK		"HSIC+PCIe"
 #define MDM9x35_HSIC			"HSIC"
 #define MDM2AP_STATUS_TIMEOUT_MS	120000L
+#define MODEM_CRASH_REPORT_TIMEOUT	5000L		//                                                                     
 #define MDM_MODEM_TIMEOUT		3000
 #define DEF_RAMDUMP_TIMEOUT		120000
 #define DEF_RAMDUMP_DELAY		2000
 #define RD_BUF_SIZE			100
 #define SFR_MAX_RETRIES			10
 #define SFR_RETRY_INTERVAL		1000
+
+static int ramdump_done;		//                                                                     
 
 enum mdm_gpio {
 	AP2MDM_WAKEUP = 0,
@@ -67,6 +78,9 @@ enum irq_mask {
 	IRQ_ERRFATAL = 0x1,
 	IRQ_STATUS = 0x2,
 	IRQ_PBLRDY = 0x4,
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	IRQ_VDDMIN = 0x8,
+#endif
 };
 
 struct mdm_ctrl {
@@ -74,6 +88,7 @@ struct mdm_ctrl {
 	spinlock_t status_lock;
 	struct workqueue_struct *mdm_queue;
 	struct delayed_work mdm2ap_status_check_work;
+	struct delayed_work save_sfr_reason_work;	//                                                                     
 	struct work_struct mdm_status_work;
 	struct work_struct restart_reason_work;
 	struct completion debug_done;
@@ -85,6 +100,9 @@ struct mdm_ctrl {
 	int errfatal_irq;
 	int status_irq;
 	int pblrdy_irq;
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	int vddmin_irq;
+#endif
 	int debug;
 	int init;
 	bool debug_fail;
@@ -133,6 +151,152 @@ static const int required_gpios[] = {
 	AP2MDM_SOFT_RESET
 };
 
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+enum modem_ssr_event {
+    MODEM_SSR_ERR_FATAL = 0x01,
+    MODEM_SSR_WATCHDOG_BITE,
+    MODEM_SSR_UNEXPECTED_RESET1,
+    MODEM_SSR_UNEXPECTED_RESET2,
+};
+
+struct modem_debug_info {
+    char save_ssr_reason[RD_BUF_SIZE];
+    int modem_ssr_event;
+    int modem_ssr_level;
+    struct workqueue_struct *modem_ssr_queue;
+    struct work_struct modem_ssr_report_work;
+};
+
+struct modem_debug_info modem_debug;
+
+static void modem_ssr_report_work_fn(struct work_struct *work)
+{
+
+    int fd, ret, ntries = 0;
+    char report_index, index_to_write;
+    char path_prefix[]="/data/logger/modem_ssr_report";
+    char index_file_path[]="/data/logger/modem_ssr_index";
+    char report_file_path[128];
+
+    char debug_info_path[]="/data/logger/mdm_chipset_info";
+    char debug_info_buf[128];
+
+    char watchdog_bite[]="Watchdog bite received from modem software!";
+    char unexpected_reset1[]="unexpected reset external modem";
+    char unexpected_reset2[]="MDM2AP_STATUS did not go high";
+
+    mm_segment_t oldfs;
+
+    oldfs = get_fs();
+    set_fs(get_ds());
+
+    fd = sys_open(debug_info_path, O_WRONLY | O_CREAT | O_EXCL, 0664);
+    if (fd < 0) {
+        printk("%s : debug_info file exists\n", __func__);
+    } else {
+        do {
+            ret = sysmon_get_debug_info(SYSMON_SS_EXT_MODEM, debug_info_buf,
+                                sizeof(debug_info_buf));
+            if (!ret) {
+                ret = sys_write(fd, debug_info_buf, strlen(debug_info_buf));
+                if (ret < 0)
+                    printk("%s : can't write the debug info file\n", __func__);
+                break;
+            }
+            msleep(1000);
+        } while (++ntries < 10);
+
+        if (ntries == 10)
+            printk("%s: Error sysmon_get_debug_info: %d\n", __func__, ret);
+
+        sys_close(fd);
+    }
+
+    fd = sys_open(index_file_path, O_RDONLY, 0664);
+    if (fd < 0) {
+        printk("%s : can't open the index file\n", __func__);
+        report_index = '0';
+    } else {
+        ret = sys_read(fd, &report_index, 1);
+        if (ret < 0) {
+            printk("%s : can't read the index file\n", __func__);
+            report_index = '0';
+        }
+        sys_close(fd);
+    }
+
+    if (report_index == '9') {
+        index_to_write = '0';
+    } else if (report_index >= '0' && report_index <= '8') {
+        index_to_write = report_index + 1;
+    } else {
+        index_to_write = '1';
+        report_index = '0';
+    }
+
+    fd = sys_open(index_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+    if (fd < 0) {
+        printk("%s : can't open the index file\n", __func__);
+        return;
+    }
+
+    ret = sys_write(fd, &index_to_write, 1);
+    if (ret < 0) {
+        printk("%s : can't write the index file\n", __func__);
+        return;
+    }
+
+    ret = sys_close(fd);
+    if (ret < 0) {
+        printk("%s : can't close the index file\n", __func__);
+        return;
+    }
+
+    sprintf(report_file_path, "%s%c", path_prefix, report_index);
+
+    fd = sys_open(report_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+
+    if (fd < 0) {
+        printk("%s : can't open the report file\n", __func__);
+        return;
+    }
+
+    switch (modem_debug.modem_ssr_event) {
+        case MODEM_SSR_ERR_FATAL:
+            ret = sys_write(fd, modem_debug.save_ssr_reason, strlen(modem_debug.save_ssr_reason));
+            break;
+        case MODEM_SSR_WATCHDOG_BITE:
+            ret = sys_write(fd, watchdog_bite, sizeof(watchdog_bite) - 1);
+            break;
+        case MODEM_SSR_UNEXPECTED_RESET1:
+            ret = sys_write(fd, unexpected_reset1, sizeof(unexpected_reset1) - 1);
+            break;
+        case MODEM_SSR_UNEXPECTED_RESET2:
+            ret = sys_write(fd, unexpected_reset2, sizeof(unexpected_reset2) - 1);
+            break;
+        default:
+            printk("%s : modem_ssr_event error %d\n", __func__, modem_debug.modem_ssr_event);
+            break;
+    }
+
+
+    if (ret < 0) {
+        printk("%s : can't write the report file\n", __func__);
+        return;
+    }
+
+    ret = sys_close(fd);
+
+    if (ret < 0) {
+        printk("%s : can't close the report file\n", __func__);
+        return;
+    }
+
+    sys_sync();
+    set_fs(oldfs);
+}
+#endif
+
 static void mdm_debug_gpio_show(struct mdm_ctrl *mdm)
 {
 	struct device *dev = mdm->dev;
@@ -179,6 +343,12 @@ static void mdm_enable_irqs(struct mdm_ctrl *mdm)
 		enable_irq(mdm->pblrdy_irq);
 		mdm->irq_mask &= ~IRQ_PBLRDY;
 	}
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	if (mdm->irq_mask & IRQ_VDDMIN) {
+		enable_irq(mdm->vddmin_irq);
+		mdm->irq_mask &= ~IRQ_VDDMIN;
+	}
+#endif
 }
 
 static void mdm_disable_irqs(struct mdm_ctrl *mdm)
@@ -199,6 +369,12 @@ static void mdm_disable_irqs(struct mdm_ctrl *mdm)
 		disable_irq_nosync(mdm->pblrdy_irq);
 		mdm->irq_mask |= IRQ_PBLRDY;
 	}
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	if (!(mdm->irq_mask & IRQ_VDDMIN)) {
+		disable_irq_nosync(mdm->vddmin_irq);
+		mdm->irq_mask |= IRQ_VDDMIN;
+	}
+#endif
 }
 
 static void mdm_deconfigure_ipc(struct mdm_ctrl *mdm)
@@ -213,6 +389,14 @@ static void mdm_deconfigure_ipc(struct mdm_ctrl *mdm)
 		destroy_workqueue(mdm->mdm_queue);
 		mdm->mdm_queue = NULL;
 	}
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    if (modem_debug.modem_ssr_queue) {
+        destroy_workqueue(modem_debug.modem_ssr_queue);
+        modem_debug.modem_ssr_queue = NULL;
+    }
+#endif
+
 }
 
 static void mdm_update_gpio_configs(struct mdm_ctrl *mdm,
@@ -416,6 +600,15 @@ static void mdm2ap_status_check(struct work_struct *work)
 	if (gpio_get_value(MDM_GPIO(mdm, MDM2AP_STATUS)) == 0) {
 		dev_dbg(dev, "MDM2AP_STATUS did not go high\n");
 		esoc_clink_evt_notify(ESOC_UNEXPECTED_RESET, esoc);
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    modem_debug.modem_ssr_level = subsys_get_restart_level(mdm->esoc->subsys_dev);
+    if (modem_debug.modem_ssr_level != RESET_SOC) {
+        modem_debug.modem_ssr_event = MODEM_SSR_UNEXPECTED_RESET1;
+        queue_work(modem_debug.modem_ssr_queue, &modem_debug.modem_ssr_report_work);
+    }
+#endif
+
 	}
 }
 
@@ -444,6 +637,16 @@ static void mdm_get_restart_reason(struct work_struct *work)
 							sizeof(sfr_buf));
 		if (!ret) {
 			dev_err(dev, "mdm restart reason is %s\n", sfr_buf);
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    modem_debug.modem_ssr_level = subsys_get_restart_level(mdm->esoc->subsys_dev);
+    if (modem_debug.modem_ssr_level != RESET_SOC) {
+        strlcpy(modem_debug.save_ssr_reason, sfr_buf, sizeof(sfr_buf));
+        modem_debug.modem_ssr_event = MODEM_SSR_ERR_FATAL;
+        queue_work(modem_debug.modem_ssr_queue, &modem_debug.modem_ssr_report_work);
+    }
+#endif
+
 			break;
 		}
 		msleep(SFR_RETRY_INTERVAL);
@@ -453,6 +656,242 @@ static void mdm_get_restart_reason(struct work_struct *work)
 						__func__, ret);
 	mdm->get_restart_reason = false;
 }
+
+/*                                                                           */
+static int copy_dump(char index)
+{
+        char *mkdir_argv[3] = { NULL, NULL, NULL };
+        char *copy_argv[4] = { NULL, NULL, NULL, NULL };
+	char *envp[3] = { NULL, NULL, NULL };
+	char path_to_dump_prefix[] = "/data/tombstones/MDM9x35/";
+        char path_to_copy_prefix[] = "/data/logger/modem_crash_dump";
+	char path_to_dump[128];
+        char path_to_copy[128];
+	char *dump_files[] = { "CODERAM.BIN", "DATARAM.BIN", "DDRCS0.BIN", "IPA_DRAM.BIN", "IPA_IRAM.BIN",
+			"IPA_REG1.BIN", "IPA_REG2.BIN", "IPA_REG3.BIN", "LPM.BIN", "MSGRAM.BIN", 
+			"OCIMEM.BIN", "PMIC_PON.BIN", "RST_STAT.BIN", "load.cmm" };
+        int ret, i;
+
+        sprintf(path_to_copy, "%s%c", path_to_copy_prefix, index);
+
+        mkdir_argv[0] = "/system/bin/mkdir";
+        mkdir_argv[1] = path_to_copy;
+
+	envp[0] = "HOME=/";
+	envp[1] = "PATH=/system/bin";
+
+        ret = call_usermodehelper(mkdir_argv[0], mkdir_argv, envp, 1);
+
+	if(ret < 0) {
+		printk("%s : mkdir command failed with an error code %d", __func__, ret);
+		return ret;
+	}
+
+	sprintf(path_to_copy, "%s%c/.", path_to_copy_prefix, index);
+
+	copy_argv[0] = "/system/bin/cp";
+	copy_argv[2] = path_to_copy;
+
+	for(i=0; i<14; i++) {
+		sprintf(path_to_dump, "%s%s", path_to_dump_prefix, dump_files[i]);
+	        copy_argv[1] = path_to_dump;
+
+	        ret = call_usermodehelper(copy_argv[0], copy_argv, envp, 1);
+
+		if(ret < 0) {
+			printk("%s : cp command failed with an error code %d whild copying %s", __func__, ret, path_to_copy);
+			return ret;
+		}
+	}
+
+        return 1;
+}
+
+static int ach_enabled(void) 
+{
+	int fd, ret;
+	char *ach_switch_path = "/sys/module/lge_handle_panic/parameters/ach_enable";
+	char switch_buf;
+
+	fd = sys_open(ach_switch_path, O_RDONLY, 0777);
+
+	if (fd < 0) {
+		printk("%s : can't open the ach switch file\n", __func__);
+		return 0;
+	} 
+
+	ret = sys_read(fd, &switch_buf, 1);
+
+	sys_close(fd);
+
+	if (ret < 0) {
+		printk("%s : can't read the ach switch file\n", __func__);
+		return 0;
+	} else {
+		if(switch_buf == '0') {
+			return 0;
+		} else if (switch_buf == '1') {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static void save_sfr_reason_work_fn(struct work_struct *work)
+{
+	int fd, ret, ntries = 0, i, msg_len = 0;
+	char sfr_buf[128], report_index, index_to_write;
+	char path_prefix[]="/data/logger/modem_crash_report";
+	char index_file_path[]="/data/logger/modem_index";
+	char report_file_path[128];
+
+	char serialno_prop_path[]="/sys/class/android_usb/android0/iSerial";
+	char serialno_file_path[]="/data/logger/serialno";
+	char serialno_buf[20];
+	int read_len = 0;
+       
+	mm_segment_t oldfs;
+	oldfs = get_fs();
+	set_fs(get_ds());
+
+	printk("[Advanced Crash Handler] sysmon_get_reason!\n");
+
+	do {
+		msleep(1000);
+		ret = sysmon_get_reason(20,sfr_buf, sizeof(sfr_buf));
+
+		if (ret) {
+			pr_err("%s: Error retrieving restart reason,"
+				"ret = %d %d/%d tries\n",
+				__func__, ret,
+				ntries + 1,
+				10);
+		} else {
+
+			if(ramdump_done == 0) {
+				pr_err("mdm restart reason : no crash occurred!\n");
+				break;
+			} else {
+				// To eleminate useless values in sfr_buf array
+				for(i=0; i<128; i++) {
+					if(sfr_buf[i] < 0x20 || sfr_buf[i] > 0x7D) {
+						sfr_buf[i] = '\0';
+						msg_len = i;
+						break;
+				}
+                        }
+
+				pr_err("mdm restart reason: %s\n", sfr_buf);
+			}
+
+			if(ach_enabled() == 0) break;
+
+			fd = sys_open(serialno_prop_path, O_RDONLY, 0777);
+			if (fd < 0) {
+				printk("%s : can't open the serialno prop\n", __func__);
+			} else {
+				read_len = sys_read(fd, serialno_buf, sizeof(serialno_buf));
+				if (read_len < 0) {
+					printk("%s : can't read the serialno prop\n", __func__);
+				} else {
+					ret = sys_close(fd);
+				}
+			}
+
+			fd = sys_open(serialno_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+			if (fd < 0) {
+				printk("%s : can't open the serialno file\n", __func__);
+            } else {
+				ret = sys_write(fd, serialno_buf, read_len);
+				if (ret < 0) {
+					printk("%s : can't write the serialno file\n", __func__);
+                } else {
+					ret = sys_close(fd);
+				}
+			}
+
+			fd = sys_open(index_file_path, O_RDONLY, 0777);
+
+			if (fd < 0) {
+				printk("%s : can't open the index file\n", __func__);
+				report_index = '0';
+			} else {
+
+				ret = sys_read(fd, &report_index, 1);
+	
+				if (ret < 0) {
+					printk("%s : can't read the index file\n", __func__);
+					report_index = '0';
+				}
+
+				ret = sys_close(fd);
+			}
+
+			if (report_index == '9') {
+				index_to_write = '0';
+			} else if (report_index >= '0' && report_index <= '8') {
+				index_to_write = report_index + 1;
+			} else {
+				index_to_write = '1';
+				report_index = '0';
+			}
+
+			fd = sys_open(index_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+
+			if (fd < 0) {
+				printk("%s : can't open the index file\n", __func__);
+				return;
+                        }
+
+			ret = sys_write(fd, &index_to_write, 1);
+
+			if (ret < 0) {
+				printk("%s : can't write the index file\n", __func__);
+				return;
+                        }
+
+			ret = sys_close(fd);
+
+			if (ret < 0) {
+				printk("%s : can't close the index file\n", __func__);
+				return;
+                        }
+
+			sprintf(report_file_path, "%s%c", path_prefix, report_index);
+
+			//start, save to text file
+			fd = sys_open(report_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+
+			if (fd < 0) {
+				printk("%s : can't open the report file\n", __func__);
+				return;
+			}
+
+			ret = sys_write(fd, sfr_buf, msg_len);
+
+			if (ret < 0) {
+				printk("%s : can't write the report file\n", __func__);
+				return;
+			}
+
+			ret = sys_close(fd);
+
+			if (ret < 0) {
+				printk("%s : can't close the report file\n", __func__);
+				return;
+			}
+
+			sys_sync();
+			set_fs(oldfs);
+
+			copy_dump(report_index);
+
+			break;
+		}
+	} while (++ntries < 10);
+}
+/*                                                                         */
 
 static void mdm_notify(enum esoc_notify notify, struct esoc_clink *esoc)
 {
@@ -470,6 +909,10 @@ static void mdm_notify(enum esoc_notify notify, struct esoc_clink *esoc)
 		break;
 	case ESOC_BOOT_DONE:
 		esoc_clink_evt_notify(ESOC_RUN_STATE, esoc);
+/*                                                                            */
+		printk("[Advanced Crash Handler] start save_sfr_reason_work!");
+		schedule_delayed_work(&mdm->save_sfr_reason_work, msecs_to_jiffies(MODEM_CRASH_REPORT_TIMEOUT));
+/*                                                                          */
 		break;
 	case ESOC_IMG_XFER_RETRY:
 		mdm->init = 1;
@@ -533,6 +976,11 @@ static void mdm_notify(enum esoc_notify notify, struct esoc_clink *esoc)
 		gpio_direction_output(MDM_GPIO(mdm, AP2MDM_SOFT_RESET),
 				!mdm->soft_reset_inverted);
 		break;
+/*                                                                            */
+	case ESOC_RAMDUMP_DONE :
+		ramdump_done = 1;
+		break;
+/*                                                                          */
 	};
 	return;
 }
@@ -574,6 +1022,15 @@ static irqreturn_t mdm_status_change(int irq, void *dev_id)
 	if (value == 0 && mdm->ready) {
 		dev_err(dev, "unexpected reset external modem\n");
 		esoc_clink_evt_notify(ESOC_UNEXPECTED_RESET, esoc);
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    modem_debug.modem_ssr_level = subsys_get_restart_level(mdm->esoc->subsys_dev);
+    if (modem_debug.modem_ssr_level != RESET_SOC) {
+        modem_debug.modem_ssr_event = MODEM_SSR_UNEXPECTED_RESET2;
+        queue_work(modem_debug.modem_ssr_queue, &modem_debug.modem_ssr_report_work);
+    }
+#endif
+
 	} else if (value == 1) {
 		cancel_delayed_work(&mdm->mdm2ap_status_check_work);
 		dev_dbg(dev, "status = 1: mdm is now ready\n");
@@ -607,6 +1064,23 @@ static irqreturn_t mdm_pblrdy_change(int irq, void *dev_id)
 		esoc_clink_queue_request(ESOC_REQ_DEBUG, esoc);
 	return IRQ_HANDLED;
 }
+
+#ifdef VDD_MIN_INTERRUPT /*                             */
+static irqreturn_t mdm_vdd_min(int irq, void *dev_id)
+{
+	struct mdm_ctrl *mdm;
+	struct device *dev;
+	struct esoc_clink *esoc;
+
+	mdm = (struct mdm_ctrl *)dev_id;
+	if (!mdm)
+		return IRQ_HANDLED;
+	esoc = mdm->esoc;
+	dev = mdm->dev;
+	pr_info("please pop up...vdd min\n");
+	return IRQ_HANDLED;
+}
+#endif
 
 static int mdm_get_status(u32 *status, struct esoc_clink *esoc)
 {
@@ -685,6 +1159,13 @@ static int mdm_configure_ipc(struct mdm_ctrl *mdm, struct platform_device *pdev)
 			   __func__);
 		goto fatal_err;
 	}
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	if (gpio_request(MDM_GPIO(mdm, MDM2AP_VDDMIN), "MDM2AP_VDDMIN")) {
+		dev_err(dev, "%s Failed to configure MDM2AP_VDDMIN gpio\n",
+			   __func__);
+		goto fatal_err;
+	}
+#endif
 	if (gpio_is_valid(MDM_GPIO(mdm, MDM2AP_PBLRDY))) {
 		if (gpio_request(MDM_GPIO(mdm, MDM2AP_PBLRDY),
 						"MDM2AP_PBLRDY")) {
@@ -727,6 +1208,9 @@ static int mdm_configure_ipc(struct mdm_ctrl *mdm, struct platform_device *pdev)
 	gpio_direction_input(MDM_GPIO(mdm, MDM2AP_STATUS));
 	gpio_direction_input(MDM_GPIO(mdm, MDM2AP_ERRFATAL));
 
+#ifdef VDD_MIN_INTERRUPT /*                             */
+	gpio_direction_input(MDM_GPIO(mdm, MDM2AP_VDDMIN));
+#endif
 	/* ERR_FATAL irq. */
 	irq = platform_get_irq_byname(pdev, "err_fatal_irq");
 	if (irq < 0) {
@@ -766,7 +1250,11 @@ status_err:
 		if (irq < 0) {
 			dev_err(dev, "%s: MDM2AP_PBLRDY IRQ request failed\n",
 				 __func__);
+#ifdef VDD_MIN_INTERRUPT /*                             */
+			goto vdd_min;
+#else
 			goto pblrdy_err;
+#endif
 		}
 
 		ret = request_threaded_irq(irq, NULL, mdm_pblrdy_change,
@@ -775,10 +1263,36 @@ status_err:
 		if (ret < 0) {
 			dev_err(dev, "MDM2AP_PBL IRQ#%d request failed %d\n",
 								irq, ret);
+#ifdef VDD_MIN_INTERRUPT /*                             */
+			goto vdd_min;
+#else
 			goto pblrdy_err;
+#endif
+
 		}
 		mdm->pblrdy_irq = irq;
 	}
+#ifdef VDD_MIN_INTERRUPT /*                             */
+vdd_min:
+	if (gpio_is_valid(MDM_GPIO(mdm, MDM2AP_VDDMIN))) {
+		irq =  platform_get_irq_byname(pdev, "mdm2ap_vddmin_irq");
+		if (irq < 0) {
+			dev_err(dev, "%s: MDM2AP_VDD_MIN IRQ request failed\n",
+				 __func__);
+			goto pblrdy_err;
+		}
+
+		ret = request_threaded_irq(irq, NULL, mdm_vdd_min,
+				IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+				"mdm vdd min", mdm);
+		if (ret < 0) {
+			dev_err(dev, "MDM2AP_VDD_MIN IRQ#%d request failed %d\n",
+								irq, ret);
+			goto pblrdy_err;
+		}
+		mdm->vddmin_irq = irq;
+	}
+#endif
 	mdm_disable_irqs(mdm);
 pblrdy_err:
 	return 0;
@@ -833,10 +1347,25 @@ static int mdm9x25_setup_hw(struct mdm_ctrl *mdm,
 	INIT_WORK(&mdm->mdm_status_work, mdm_status_fn);
 	INIT_WORK(&mdm->restart_reason_work, mdm_get_restart_reason);
 	INIT_DELAYED_WORK(&mdm->mdm2ap_status_check_work, mdm2ap_status_check);
+/*                                                                            */
+	INIT_DELAYED_WORK(&mdm->save_sfr_reason_work, save_sfr_reason_work_fn);
+	ramdump_done = 0;
+/*                                                                          */
 	mdm->get_restart_reason = false;
 	mdm->debug_fail = false;
 	mdm->esoc = esoc;
 	mdm->init = 0;
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    modem_debug.modem_ssr_queue = alloc_workqueue("modem_ssr_queue", 0, 0);
+    if (!modem_debug.modem_ssr_queue) {
+        printk("could not create modem_ssr_queue\n");
+    }
+    modem_debug.modem_ssr_event = 0;
+    modem_debug.modem_ssr_level = RESET_SOC;
+    INIT_WORK(&modem_debug.modem_ssr_report_work, modem_ssr_report_work_fn);
+#endif
+
 	return 0;
 }
 
@@ -905,10 +1434,25 @@ static int mdm9x35_setup_hw(struct mdm_ctrl *mdm,
 	INIT_WORK(&mdm->mdm_status_work, mdm_status_fn);
 	INIT_WORK(&mdm->restart_reason_work, mdm_get_restart_reason);
 	INIT_DELAYED_WORK(&mdm->mdm2ap_status_check_work, mdm2ap_status_check);
+/*                                                                            */
+	INIT_DELAYED_WORK(&mdm->save_sfr_reason_work, save_sfr_reason_work_fn);
+	ramdump_done = 0;
+/*                                                                          */
 	mdm->get_restart_reason = false;
 	mdm->debug_fail = false;
 	mdm->esoc = esoc;
 	mdm->init = 0;
+
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+    modem_debug.modem_ssr_queue = alloc_workqueue("modem_ssr_queue", 0, 0);
+    if (!modem_debug.modem_ssr_queue) {
+        printk("could not create modem_ssr_queue\n");
+    }
+    modem_debug.modem_ssr_event = 0;
+    modem_debug.modem_ssr_level = RESET_SOC;
+    INIT_WORK(&modem_debug.modem_ssr_report_work, modem_ssr_report_work_fn);
+#endif
+
 	return 0;
 }
 

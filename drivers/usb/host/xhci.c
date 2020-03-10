@@ -27,6 +27,9 @@
 #include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/dmi.h>
+#ifdef CONFIG_MACH_LGE
+#include <linux/clk.h>
+#endif
 
 #include "xhci.h"
 
@@ -56,6 +59,14 @@ int xhci_handshake(struct xhci_hcd *xhci, void __iomem *ptr,
 		      u32 mask, u32 done, int usec)
 {
 	u32	result;
+#ifdef CONFIG_MACH_LGE
+	ktime_t start;
+	ktime_t now;
+	int timeout;
+
+	start = ktime_get();
+	timeout = usec;
+#endif
 
 	do {
 		result = xhci_readl(xhci, ptr);
@@ -65,7 +76,13 @@ int xhci_handshake(struct xhci_hcd *xhci, void __iomem *ptr,
 		if (result == done)
 			return 0;
 		udelay(1);
+
 		usec--;
+#ifdef CONFIG_MACH_LGE
+		now = ktime_get();
+		if( (int)ktime_to_us(ktime_sub(now, start)) >= timeout)
+			break;
+#endif
 	} while (usec > 0);
 	return -ETIMEDOUT;
 }

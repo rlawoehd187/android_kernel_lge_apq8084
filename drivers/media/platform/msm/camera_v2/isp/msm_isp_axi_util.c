@@ -389,8 +389,8 @@ int msm_isp_axi_check_stream_state(
 				stream_cfg_cmd->cmd == STOP_IMMEDIATELY)) {
 				stream_info->state = ACTIVE;
 			} else {
-				pr_err("%s: Invalid stream state: %d\n",
-					__func__, stream_info->state);
+				pr_err("%s: Stream %d Invalid stream state: %d\n",
+					__func__, stream_info->stream_id, stream_info->state);
 				spin_unlock_irqrestore(
 					&stream_info->lock, flags);
 				rc = -EINVAL;

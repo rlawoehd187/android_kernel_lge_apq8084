@@ -367,6 +367,10 @@ static ssize_t ksb_fs_write(struct file *fp, const char __user *buf,
 
 	queue_work(ksb->wq, &ksb->to_mdm_work);
 
+#if 1 /* [BSP-USB] KS_WRITE debug */
+	dbg_log_event(ksb, "KS_WRITE", count, 0);
+#endif
+
 	return count;
 }
 
@@ -374,6 +378,8 @@ static int ksb_fs_open(struct inode *ip, struct file *fp)
 {
 	struct ks_bridge *ksb =
 			container_of(ip->i_cdev, struct ks_bridge, cdev);
+
+	pr_info("[%s][%d] Comm: %s, Started\n", __func__, __LINE__, current->comm);/*add logs for mdm boot debugging, jaseseung.noh*/
 
 	if (IS_ERR(ksb)) {
 		pr_err("ksb device not found");
@@ -388,6 +394,8 @@ static int ksb_fs_open(struct inode *ip, struct file *fp)
 
 	if (test_bit(USB_DEV_CONNECTED, &ksb->flags))
 		queue_work(ksb->wq, &ksb->start_rx_work);
+
+	pr_info("[%s][%d] Comm: %s, Finished\n", __func__, __LINE__, current->comm);/*add logs for mdm boot debugging, jaseseung.noh*/
 
 	return 0;
 }
@@ -671,6 +679,8 @@ ksb_usb_probe(struct usb_interface *ifc, const struct usb_device_id *id)
 
 	ifc_num = ifc->cur_altsetting->desc.bInterfaceNumber;
 
+	pr_info("[%s][%d]Start!\n", __func__, __LINE__);/*add logs for mdm boot debugging, jaseseung.noh*/
+
 	udev = interface_to_usbdev(ifc);
 	fbdev = mdev = (struct ksb_dev_info *)id->driver_info;
 
@@ -805,7 +815,7 @@ ksb_usb_probe(struct usb_interface *ifc, const struct usb_device_id *id)
 		usb_enable_autosuspend(ksb->udev);
 	}
 
-	dev_dbg(&udev->dev, "usb dev connected");
+	dev_err(&udev->dev, "usb dev connected");/*add logs for mdm boot debugging, jaseseung.noh*/
 
 	return 0;
 
@@ -962,6 +972,8 @@ static int __init ksb_init(void)
 	int num_instances = 0;
 	int ret = 0;
 	int i;
+
+	pr_info("[%s][%d] Start!\n", __func__, __LINE__);/*add logs for mdm boot debugging, jaseseung.noh*/
 
 	dbg_dir = debugfs_create_dir("ks_bridge", NULL);
 	if (IS_ERR(dbg_dir))

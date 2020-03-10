@@ -455,6 +455,11 @@ static int mdss_debugfs_perf_init(struct mdss_debug_data *mdd,
 	debugfs_create_file("ib_factor_overlap", 0644, mdd->perf,
 		&mdata->ib_factor_overlap, &mdss_factor_fops);
 
+#ifdef CONFIG_MACH_LGE
+	debugfs_create_file("ib_factor_limit", 0644, mdd->perf,
+		&mdata->ib_factor_limit, &mdss_factor_fops);
+#endif
+
 	debugfs_create_file("clk_factor", 0644, mdd->perf,
 		&mdata->clk_factor, &mdss_factor_fops);
 

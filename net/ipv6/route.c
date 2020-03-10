@@ -2249,6 +2249,7 @@ static const struct nla_policy rtm_ipv6_policy[RTA_MAX+1] = {
 	[RTA_PRIORITY]          = { .type = NLA_U32 },
 	[RTA_METRICS]           = { .type = NLA_NESTED },
 	[RTA_MULTIPATH]		= { .len = sizeof(struct rtnexthop) },
+	[RTA_UID]		= { .type = NLA_U32 },
 };
 
 static int rtm_to_fib6_config(struct sk_buff *skb, struct nlmsghdr *nlh,
@@ -2555,6 +2556,15 @@ static int rt6_fill_node(struct net *net,
 			goto nla_put_failure;
 	}
 
+  /*                                                      */
+  //G3L netlink kernel crash in case of WiFi on/off repeat
+  if (unlikely((unsigned long)dst_metrics_ptr(&rt->dst) < 2)) {
+      WARN(1, "Got null _metrics from rt->dst");
+      printk(KERN_DEBUG "Got null _metrics from rt->dst \n");
+      goto nla_put_failure;
+  }
+  /*                                                    */
+
 	if (rtnetlink_put_metrics(skb, dst_metrics_ptr(&rt->dst)) < 0)
 		goto nla_put_failure;
 
@@ -2634,6 +2644,11 @@ static int inet6_rtm_getroute(struct sk_buff *in_skb, struct nlmsghdr* nlh)
 
 	if (tb[RTA_OIF])
 		oif = nla_get_u32(tb[RTA_OIF]);
+
+	if (tb[RTA_UID])
+		fl6.flowi6_uid = nla_get_u32(tb[RTA_UID]);
+	else
+		fl6.flowi6_uid = (iif ? (uid_t) -1 : current_uid());
 
 	if (iif) {
 		struct net_device *dev;

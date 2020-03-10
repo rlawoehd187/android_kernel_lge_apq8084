@@ -791,8 +791,8 @@ static struct pinctrl *create_pinctrl(struct device *dev)
 		 * an -EPROBE_DEFER later, as that is the worst case.
 		 */
 		if (ret == -EPROBE_DEFER) {
-			pinctrl_free(p, false);
 			mutex_unlock(&pinctrl_maps_mutex);
+			pinctrl_free(p, false);
 			return ERR_PTR(ret);
 		}
 	}
@@ -1176,6 +1176,7 @@ void pinctrl_unregister_map(struct pinctrl_map const *map)
 		if (maps_node->maps == map) {
 			list_del(&maps_node->node);
 			mutex_unlock(&pinctrl_maps_mutex);
+			kfree(maps_node);
 			return;
 		}
 	}

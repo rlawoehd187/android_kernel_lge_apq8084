@@ -33,6 +33,10 @@
 
 #include "hub.h"
 
+#ifdef CONFIG_USB_G_LGE_ANDROID
+#include <soc/qcom/subsystem_restart.h>
+#endif
+
 /* if we are in debug mode, always announce new devices */
 #ifdef DEBUG
 #ifndef CONFIG_USB_ANNOUNCE_NEW_DEVICES
@@ -4248,6 +4252,11 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 				if (retval != -ENODEV)
 					dev_err(&udev->dev, "device not accepting address %d, error %d\n",
 							devnum, retval);
+#ifdef CONFIG_USB_G_LGE_ANDROID
+				if (retval == -EPROTO &&
+				    udev->bus->busnum == 1)
+					subsystem_restart("esoc0");
+#endif
 				goto fail;
 			}
 			if (udev->speed == USB_SPEED_SUPER) {

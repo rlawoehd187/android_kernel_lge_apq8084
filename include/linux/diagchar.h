@@ -33,6 +33,9 @@
 #define CALLBACK_MODE			6
 
 /* different values that go in for diag_data_type */
+#ifdef CONFIG_LGE_DM_APP
+#define DM_APP_MODE			10
+#endif
 
 #define DATA_TYPE_EVENT         	0
 #define DATA_TYPE_F3            	1

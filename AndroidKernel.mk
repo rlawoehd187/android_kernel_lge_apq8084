@@ -72,8 +72,27 @@ mpath=`dirname $$mdpath`; rm -rf $$mpath;\
 fi
 endef
 
+# LGE_CHANGE_S, porting bootchart2 to android, byungchul.park@lge.com 20120620
+ifeq ($(strip $(INIT_BOOTCHART2)),true)
+KERNEL_DEFCONFIG_PATH := $(ANDROID_BUILD_TOP)/kernel/arch/arm/configs/$(KERNEL_DEFCONFIG)
+KERNEL_DEFCONFIG_BC2_PATH := $(ANDROID_BUILD_TOP)/kernel/arch/arm/configs/bc2_$(KERNEL_DEFCONFIG)
+KERNEL_DEFCONFIG := bc2_$(KERNEL_DEFCONFIG)
+endif
+# LGE_CHANGE_E, porting bootchart2 to android, byungchul.park@lge.com 20120620
+
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
+# LGE_CHANGE_S, porting bootchart2 to android, byungchul.park@lge.com 20120620
+ifeq ($(strip $(INIT_BOOTCHART2)),true)
+	cp -f $(KERNEL_DEFCONFIG_PATH) $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_TASKSTATS=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_TASK_DELAY_ACCT=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_TASK_XACCT=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_TASK_IO_ACCOUNTING=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_CONNECTOR=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+	echo "CONFIG_PROC_EVENTS=y" >> $(KERNEL_DEFCONFIG_BC2_PATH)
+endif
+# LGE_CHANGE_E, porting bootchart2 to android, byungchul.park@lge.com 20120620
 
 $(KERNEL_CONFIG): $(KERNEL_OUT)
 	$(MAKE) -C kernel O=../$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
@@ -85,6 +104,19 @@ $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_OUT) $(KERNEL_HEADERS_INSTALL)
 	$(MAKE) -C kernel O=../$(KERNEL_OUT) INSTALL_MOD_PATH=../../$(KERNEL_MODULES_INSTALL) INSTALL_MOD_STRIP=1 ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) modules_install
 	$(mv-modules)
 	$(clean-module-folder)
+
+ifeq ($(PRODUCT_SUPPORT_EXFAT), y)
+	@cp -f $(ANDROID_BUILD_TOP)/kernel/scripts/tuxera_update.sh $(ANDROID_BUILD_TOP)
+	@sh tuxera_update.sh --target target/lg.d/mobile-apq8084 --use-cache --latest --max-cache-entries 2 --source-dir $(ANDROID_BUILD_TOP)/kernel --output-dir $(ANDROID_BUILD_TOP)/$(KERNEL_OUT) -a --user lg-mobile --pass AumlTsj0ou
+	@tar -xzf tuxera-exfat*.tgz
+	@mkdir -p $(TARGET_OUT_EXECUTABLES)
+	@cp $(ANDROID_BUILD_TOP)/tuxera-exfat*/exfat/kernel-module/texfat.ko $(ANDROID_BUILD_TOP)/$(TARGET_OUT_EXECUTABLES)/../lib/modules/
+	@cp $(ANDROID_BUILD_TOP)/tuxera-exfat*/exfat/tools/* $(TARGET_OUT_EXECUTABLES)
+	@rm -f kheaders*.tar.bz2
+	@rm -f tuxera-exfat*.tgz
+	@rm -rf tuxera-exfat*
+	@rm -f tuxera_update.sh
+endif
 
 $(KERNEL_HEADERS_INSTALL): $(KERNEL_OUT)
 	$(hide) rm -f ../$(KERNEL_CONFIG)

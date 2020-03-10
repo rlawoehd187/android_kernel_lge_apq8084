@@ -91,7 +91,7 @@ static void check_dsi_ctrl_status(struct work_struct *work)
 		mutex_lock(ctl->shared_lock);
 	mutex_lock(&mdp5_data->ov_lock);
 
-	if (pdsi_status->mfd->shutdown_pending) {
+	if (mdss_panel_is_power_off(pdsi_status->mfd->panel_power_state)) {
 		mutex_unlock(&mdp5_data->ov_lock);
 		if (ctl->shared_lock)
 			mutex_unlock(ctl->shared_lock);

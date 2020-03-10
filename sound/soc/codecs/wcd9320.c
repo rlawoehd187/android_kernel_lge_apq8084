@@ -9,6 +9,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
+
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/firmware.h>
@@ -6337,8 +6338,10 @@ static const struct wcd9xxx_reg_mask_val taiko_1_0_reg_defaults[] = {
 
 	/* Disable TX7 internal biasing path which can cause leakage */
 	TAIKO_REG_VAL(TAIKO_A_TX_SUP_SWITCH_CTRL_1, 0xBF),
+#ifndef CONFIG_SWICH_MAX1462X
 	/* Enable MICB 4 VDDIO switch to prevent leakage */
 	TAIKO_REG_VAL(TAIKO_A_MICB_4_MBHC, 0x81),
+#endif
 
 	/* Close leakage on the spkdrv */
 	TAIKO_REG_VAL(TAIKO_A_SPKR_DRV_DBG_PWRSTG, 0x24),
@@ -6478,6 +6481,12 @@ static const struct wcd9xxx_reg_mask_val taiko_codec_reg_init_val[] = {
 	{TAIKO_A_CDC_COMP0_B5_CTL, 0x7F, 0x7F},
 	{TAIKO_A_CDC_COMP1_B5_CTL, 0x7F, 0x7F},
 	{TAIKO_A_CDC_COMP2_B5_CTL, 0x7F, 0x7F},
+
+	/* Set the MICBIAS default output as pull down*/
+	{TAIKO_A_MICB_1_CTL, 0x01, 0x01},
+	{TAIKO_A_MICB_2_CTL, 0x01, 0x01},
+	{TAIKO_A_MICB_3_CTL, 0x01, 0x01},
+	{TAIKO_A_MICB_4_CTL, 0x01, 0x01},
 
 	/*
 	 * Setup wavegen timer to 20msec and disable chopper

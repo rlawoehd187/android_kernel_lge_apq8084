@@ -144,4 +144,8 @@ of_find_backlight_by_node(struct device_node *node)
 }
 #endif
 
+#if defined(CONFIG_MACH_LGE_BACKLIGHT_SUPPORT)
+extern struct backlight_device *get_backlight_device(void);
+#endif
+
 #endif

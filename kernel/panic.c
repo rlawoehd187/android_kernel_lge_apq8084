@@ -24,6 +24,10 @@
 #include <linux/nmi.h>
 #include <linux/coresight.h>
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#endif
+
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
 
@@ -80,6 +84,9 @@ void panic(const char *fmt, ...)
 	long i, i_next = 0;
 	int state = 0;
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	lge_disable_watchdog();
+#endif
 	coresight_abort();
 	/*
 	 * Disable local interrupts. This will prevent panic_smp_self_stop

@@ -22,6 +22,7 @@
 #include <mach/msm_bus.h>
 #include "msm_bus_core.h"
 #include <mach/trace_msm_bus.h>
+#include <linux/hrtimer.h>
 
 #define INDEX_MASK 0x0000FFFF
 #define PNODE_MASK 0xFFFF0000
@@ -435,12 +436,13 @@ static uint64_t get_avail_bw(struct msm_bus_fabric_device *fabdev)
 	avail_bw = msm_bus_div64(100,
 				(GET_BIMC_BW(fabclk_rate) * fabdev->eff_fact));
 
-	if (avail_bw >= fabdev->nr_lim_thresh)
+	trace_bus_avail_bw(avail_bw, rt_bw);
+
+	if (avail_bw > fabdev->nr_lim_thresh)
 		return 0;
 
 	MSM_BUS_DBG("%s: Total_avail_bw %llu, rt_bw %llu\n",
 		__func__, avail_bw, rt_bw);
-	trace_bus_avail_bw(avail_bw, rt_bw);
 
 	if (avail_bw < rt_bw) {
 		MSM_BUS_ERR("\n%s: ERROR avail BW %llu < MDP %llu",
@@ -492,6 +494,14 @@ static void compute_nr_limits(struct msm_bus_fabric_device *fabdev, int pnode)
 			MASTER_NODE);
 
 	MSM_BUS_DBG("%s: Found %d NR LIM nodes", __func__, num_nr_lim);
+
+	/*
+	 * If there aren't any non-real time masters to be throttled
+	 * return.
+	 */
+	if (!num_nr_lim)
+		return;
+
 	for (i = 0; i < num_nr_lim; i++)
 		total_ib += get_node_maxib(info[i]);
 
@@ -559,7 +569,7 @@ static void setup_nr_limits(int curr, int pnode)
 
 	/* This logic is currently applicable to BIMC masters only */
 	if (fabdev->id != MSM_BUS_FAB_DEFAULT) {
-		MSM_BUS_ERR("Static limiting of NR masters only for BIMC");
+		MSM_BUS_DBG("Static limiting of NR masters only for BIMC");
 		goto exit_setup_nr_limits;
 	}
 
@@ -572,28 +582,6 @@ static void setup_nr_limits(int curr, int pnode)
 	compute_nr_limits(fabdev, pnode);
 exit_setup_nr_limits:
 	return;
-}
-
-static bool is_nr_lim(int id)
-{
-	struct msm_bus_fabric_device *fabdev = msm_bus_get_fabric_device
-		(GET_FABID(id));
-	struct msm_bus_inode_info *info;
-	bool ret = false;
-
-	if (!fabdev) {
-		MSM_BUS_ERR("Bus device for bus ID: %d not found!\n",
-			GET_FABID(id));
-		goto exit_is_nr_lim;
-	}
-
-	info = fabdev->algo->find_node(fabdev, id);
-	if (!info)
-		MSM_BUS_ERR("Cannot find node info %d!\n", id);
-	else if ((info->node_info->nr_lim || info->node_info->rt_mas))
-		ret = true;
-exit_is_nr_lim:
-	return ret;
 }
 
 /**
@@ -761,8 +749,7 @@ static int update_path(int curr, int pnode, uint64_t req_clk, uint64_t req_bw,
 	if (ret)
 		MSM_BUS_ERR("Failed to update clk\n");
 
-	if ((ctx == cl_active_flag) &&
-		((src_info->node_info->nr_lim || src_info->node_info->rt_mas)))
+	if ((ctx == cl_active_flag))
 		setup_nr_limits(curr, pnode);
 
 	/* If freq is going down , apply the changes now before
@@ -911,6 +898,7 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 	struct msm_bus_scale_pdata *pdata;
 	int pnode, src, curr, ctx;
 	uint64_t req_clk, req_bw, curr_clk, curr_bw;
+	struct timespec ts;
 	struct msm_bus_client *client = (struct msm_bus_client *)cl;
 	if (IS_ERR_OR_NULL(client)) {
 		MSM_BUS_ERR("msm_bus_scale_client update req error %d\n",
@@ -940,6 +928,7 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 	MSM_BUS_DBG("cl: %u index: %d curr: %d num_paths: %d\n",
 		cl, index, client->curr, client->pdata->usecase->num_paths);
 
+	msm_bus_dbg_client_data(client->pdata, index, cl);
 	for (i = 0; i < pdata->usecase->num_paths; i++) {
 		src = msm_bus_board_get_iid(client->pdata->usecase[index].
 			vectors[i].src);
@@ -988,16 +977,17 @@ int msm_bus_scale_client_update_request(uint32_t cl, unsigned index)
 
 	client->curr = index;
 	ctx = ACTIVE_CTX;
-	msm_bus_dbg_client_data(client->pdata, index, cl);
 	bus_for_each_dev(&msm_bus_type, NULL, NULL, msm_bus_commit_fn);
 
 	/* For NR/RT limited masters, if freq is going up , apply the changes
 	 * after we commit clk data.
 	 */
-	if (is_nr_lim(src) && ((req_clk > curr_clk) || (req_bw > curr_bw)))
+	if ((req_clk > curr_clk) || (req_bw > curr_bw))
 		bus_for_each_dev(&msm_bus_type, NULL, NULL,
 					msm_bus_commit_limiter);
-
+	ts = ktime_to_timespec(ktime_get());
+	trace_bus_update_request_end((int)ts.tv_sec, (int)ts.tv_nsec,
+		client->pdata->name);
 err:
 	mutex_unlock(&msm_bus_lock);
 	return ret;

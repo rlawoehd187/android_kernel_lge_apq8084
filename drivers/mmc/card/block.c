@@ -44,7 +44,9 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
-
+#if defined(CONFIG_MMC_FFU)
+#include <linux/mmc/ffu.h>
+#endif
 #include <asm/uaccess.h>
 
 #include "queue.h"
@@ -148,6 +150,13 @@ enum {
 	MMC_PACKED_NR_ZERO,
 	MMC_PACKED_NR_SINGLE,
 };
+
+#if defined(CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL)
+enum {
+	CMD_CRC_ERROR = 1,
+	DAT_CRC_ERROR
+};
+#endif
 
 module_param(perdev_minors, int, 0444);
 MODULE_PARM_DESC(perdev_minors, "Minors numbers to allocate per device");
@@ -697,7 +706,39 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 
 	mmc_rpm_hold(card->host, &card->dev);
 	mmc_claim_host(card->host);
-
+#if defined(CONFIG_MMC_FFU)
+	if (cmd.opcode == MMC_FFU_DOWNLOAD_OP) {
+		err = mmc_ffu_download(card, &cmd, idata->buf,
+				idata->buf_bytes);
+		goto cmd_rel_host;
+	}
+	if (cmd.opcode == MMC_FFU_INSTALL_OP) {
+		err = mmc_ffu_install(card);
+		goto cmd_rel_host;
+	}
+	if (cmd.opcode == MMC_FFU_MID_OP) {
+		printk(KERN_INFO "[LGE][FFU][cid : %u]\n", card->cid.manfid);
+		if (copy_to_user((void __user *)(unsigned long)
+					idata->ic.data_ptr, &card->cid.manfid,
+					sizeof(unsigned int))) {
+			err = -EFAULT;
+		} else {
+			err = 0;
+		}
+		goto cmd_rel_host;
+	}
+	if(cmd.opcode == MMC_FFU_PNM_OP) {
+		printk(KERN_INFO "[LGE][FFU][pnm : %s]\n", card->cid.prod_name);
+		if (copy_to_user((void __user *)(unsigned long) idata->ic.data_ptr,
+						&card->cid.prod_name, idata->ic.blksz)) {
+			err = -EFAULT;
+		}
+		else {
+			err = 0;
+		}
+		goto cmd_rel_host;
+	}
+#endif
 	err = mmc_blk_part_switch(card, md);
 	if (err)
 		goto cmd_rel_host;
@@ -1092,6 +1133,101 @@ static int get_card_status(struct mmc_card *card, u32 *status, int retries)
 	return err;
 }
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+
+static int lge_asctodec(char *buff, int num)
+{
+	int i, j;
+	int val, tmp;
+	val=0;
+	for (i=0; i<num; i++) {
+		tmp = 1;
+		for (j=0; j< (num-(i+1)); j++) {
+			tmp = tmp*10;
+		}
+		val += tmp*(buff[i]-48);
+	}
+	return val;
+}
+
+static void record_crc_error(int crctype, char *hostname)
+{
+	struct file *filp;
+	char bufs[10], asc_num[10];
+	int ret;
+	int count;
+	int num_crc;
+	int tmp;
+	int i;
+	char filename[256] = {0,};
+
+	mm_segment_t old_fs = get_fs();
+
+	if (crctype == CMD_CRC_ERROR) {
+		sprintf(filename, "/data/data/com.example.fs_bench/files/%s_cmd_crc_error.txt", hostname);
+	} else if (crctype == DAT_CRC_ERROR) {
+		sprintf(filename, "/data/data/com.example.fs_bench/files/%s_dat_crc_error.txt", hostname);
+	}
+
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, O_RDWR, S_IRUSR|S_IWUSR);
+	if (IS_ERR(filp)){
+		pr_err("[DRV_STR] open error : %ld\n", IS_ERR(filp));
+		return;
+	}
+	count = 0;
+
+	do {
+		ret = vfs_read(filp, &bufs[count], 1, &filp->f_pos);
+		count++;
+	} while(ret!=0);
+	count--;
+	bufs[count]=0;
+	num_crc = lge_asctodec(bufs, count);
+	num_crc = num_crc+1;
+	count = 1;
+	tmp = num_crc;
+	do {
+		tmp = tmp/10;
+		if(!(tmp<1))
+			count++;
+		else
+			break;
+	} while(1);
+
+	for (i=0; i<count; i++) {
+		tmp = num_crc%10;
+		asc_num[count-(i+1)] = tmp + '0';
+		num_crc = num_crc/10;
+	}
+	asc_num[count]=0;
+	pr_info("[DRV_STR] ascii val : %s\n", asc_num);
+
+	filp->f_pos=0;
+
+	vfs_write(filp, asc_num, count, &filp->f_pos);
+	filp_close(filp, NULL);
+	set_fs(old_fs);
+	return;
+}
+
+
+static void mmc0_record_crc_cmd_error(struct work_struct *work)
+{
+	pr_info("[DRV_STR] [mmc0] CMD CRC Occured!!!\n");
+	record_crc_error(CMD_CRC_ERROR, "mmc0");
+}
+static DECLARE_WORK(lge_crc_cmd_mmc0_workqueue, mmc0_record_crc_cmd_error);
+
+static void mmc1_record_crc_cmd_error(struct work_struct *work)
+{
+	pr_info("[DRV_STR] [mmc1] CMD CRC Occured!!!\n");
+	record_crc_error(CMD_CRC_ERROR, "mmc1");
+}
+static DECLARE_WORK(lge_crc_cmd_mmc1_workqueue, mmc1_record_crc_cmd_error);
+#endif
+
 #define ERR_NOMEDIUM	3
 #define ERR_RETRY	2
 #define ERR_ABORT	1
@@ -1106,6 +1242,15 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		pr_err("%s: %s sending %s command, card status %#x\n",
 			req->rq_disk->disk_name, "response CRC error",
 			name, status);
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+		if (!strcmp(req->rq_disk->disk_name, "mmcblk0")) {
+			queue_work(system_nrt_wq, &lge_crc_cmd_mmc0_workqueue);
+		}
+
+		if (!strcmp(req->rq_disk->disk_name, "mmcblk1")) {
+			queue_work(system_nrt_wq, &lge_crc_cmd_mmc1_workqueue);
+		}
+#endif
 		return ERR_RETRY;
 
 	case -ETIMEDOUT:
@@ -1178,8 +1323,15 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 			break;
 
 		prev_cmd_status_valid = false;
+#ifdef CONFIG_MACH_LGE
+		pr_err("[LGE][MMC]%s: error %d sending status command, %sing, "
+				"cd-gpio:%d\n", req->rq_disk->disk_name, err,
+				retry ? "retry" : "abort",
+				mmc_gpio_get_status(card->host));
+#else
 		pr_err("%s: error %d sending status command, %sing\n",
 		       req->rq_disk->disk_name, err, retry ? "retry" : "abort");
+#endif
 	}
 
 	/* We couldn't get a response from the card.  Give up. */
@@ -1483,6 +1635,17 @@ static int mmc_blk_err_check(struct mmc_card *card,
 	struct mmc_blk_request *brq = &mq_mrq->brq;
 	struct request *req = mq_mrq->req;
 	int ecc_err = 0, gen_err = 0;
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                                        
+  */
+	if (mmc_card_sd(card) && !mmc_gpio_get_status(card->host)) {
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] sd-no-exist, "
+				"skip next\n", __func__);
+		return MMC_BLK_NOMEDIUM;
+	}
+#endif
 
 	/*
 	 * sbc.error indicates a problem with the set block count

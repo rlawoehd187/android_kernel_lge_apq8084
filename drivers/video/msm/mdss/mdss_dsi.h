@@ -78,6 +78,9 @@ enum dsi_panel_bl_ctrl {
 	BL_PWM,
 	BL_WLED,
 	BL_DCS_CMD,
+#if defined(CONFIG_MACH_LGE_BACKLIGHT_SUPPORT)
+	BL_OTHERS,
+#endif
 	UNKNOWN_CTRL,
 };
 
@@ -156,6 +159,18 @@ enum dsi_pm_type {
 extern struct device dsi_dev;
 extern u32 dsi_irq;
 extern struct mdss_dsi_ctrl_pdata *ctrl_list[];
+
+#ifdef CONFIG_LGE_LCD_TUNING
+extern struct dsi_cmd_desc *dsi_panel_tun_cmds;
+extern int num_of_tun_cmds;
+extern int num_cmds;
+extern struct dsi_cmd_desc *tun_dsi_panel_on_cmds;
+#endif
+
+#ifdef CONFIG_MACH_LGE
+extern struct mdss_panel_data *pdata_base;
+extern struct msm_fb_data_type *mfd_base;
+#endif
 
 struct dsiphy_pll_divider_config {
 	u32 clk_rate;
@@ -242,6 +257,9 @@ enum {
 
 #define DSI_EV_PLL_UNLOCKED		0x0001
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+#define DSI_EV_DSI_FIFO_EMPTY		0x0003
+#endif
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
 
 struct mdss_dsi_ctrl_pdata {
@@ -273,6 +291,9 @@ struct mdss_dsi_ctrl_pdata {
 	int irq_cnt;
 	int rst_gpio;
 	int disp_en_gpio;
+#ifdef CONFIG_MFD_TPS65132
+	int disp_en_gpio2;
+#endif
 	int bklt_en_gpio;
 	int mode_gpio;
 	int bklt_ctrl;	/* backlight ctrl */
@@ -382,6 +403,10 @@ int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		bool cmd_cfg_cont_splash);
 
+#ifdef CONFIG_MFD_TPS65132
+extern int tps65132_regulate_voltage(int on, int mode);
+#endif
+
 static inline const char *__mdss_dsi_pm_name(enum dsi_pm_type module)
 {
 	switch (module) {
@@ -426,12 +451,12 @@ static inline bool mdss_dsi_sync_wait_trigger(struct mdss_dsi_ctrl_pdata *ctrl)
 
 static inline bool mdss_dsi_is_left_ctrl(struct mdss_dsi_ctrl_pdata *ctrl)
 {
-        return ctrl->ndx == DSI_CTRL_LEFT;
+	return ctrl->ndx == DSI_CTRL_LEFT;
 }
 
 static inline bool mdss_dsi_is_right_ctrl(struct mdss_dsi_ctrl_pdata *ctrl)
 {
-        return ctrl->ndx == DSI_CTRL_RIGHT;
+	return ctrl->ndx == DSI_CTRL_RIGHT;
 }
 
 static inline struct mdss_dsi_ctrl_pdata *mdss_dsi_get_other_ctrl(

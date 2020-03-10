@@ -55,6 +55,15 @@
 #include "mdss_fb.h"
 #include "mdss_mdp_splash_logo.h"
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#endif
+
+#ifdef CONFIG_MACH_LGE
+#include "mdss_mdp.h"
+#include "mdss_dsi.h"
+#include <mach/board_lge.h>
+#endif
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -72,7 +81,16 @@ static u32 mdss_fb_pseudo_palette[16] = {
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
 };
 
+#if defined(CONFIG_LGE_BROADCAST_TDMB)
+extern struct mdp_csc_cfg dmb_csc_convert;
+extern int pp_set_dmb_status(int flag);
+#endif /*               */
+
 static struct msm_mdp_interface *mdp_instance;
+
+#ifdef CONFIG_MACH_LGE
+struct msm_fb_data_type *mfd_base;
+#endif
 
 static int mdss_fb_register(struct msm_fb_data_type *mfd);
 static int mdss_fb_open(struct fb_info *info, int user);
@@ -197,6 +215,9 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 }
 
 static int lcd_backlight_registered;
+#ifdef CONFIG_LGE_FOTA_SILENT_RESET
+static bool fb_blank_called;
+#endif
 
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
@@ -207,10 +228,22 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
+#ifdef CONFIG_LGE_FOTA_SILENT_RESET
+	if (((lge_get_bootreason() == LGE_REBOOT_REASON_FOTA_RESET)
+		|| (lge_get_bootreason() == LGE_REBOOT_REASON_FOTA_DONE))
+		&& !fb_blank_called) {
+		pr_info("%s : FOTA reboot. set bl to 50\n", __func__);
+		value = 50;
+	}
+#endif
+#ifdef CONFIG_MACH_LGE
+	bl_lvl = value;
+#else
 	/* This maps android backlight level 0 to 255 into
 	   driver backlight level 0 to bl_max with rounding */
 	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 				mfd->panel_info->brightness_max);
+#endif
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -276,7 +309,11 @@ static inline int mdss_fb_validate_split(int left, int right,
 	int rc = -EINVAL;
 	u32 panel_xres = mfd->panel_info->xres;
 	/* more validate condition could be added if needed */
+#ifdef CONFIG_MACH_LGE
+    if (mfd->index == 0 && left && right) {
+#else
 	if (left && right) {
+#endif
 		if (mfd->split_display)
 			panel_xres *= 2;
 
@@ -658,6 +695,10 @@ static int mdss_fb_probe(struct platform_device *pdev)
 		mfd->mdp.splash_init_fnc(mfd);
 
 	INIT_DELAYED_WORK(&mfd->idle_notify_work, __mdss_fb_idle_notify_work);
+#ifdef CONFIG_MACH_LGE
+	if (mfd_base == NULL)
+		mfd_base = mfd;
+#endif
 
 	return rc;
 }
@@ -1142,6 +1183,10 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 		if (mdss_fb_is_power_on(mfd) && mfd->mdp.off_fnc) {
 			cur_power_state = mfd->panel_power_state;
 
+			pr_info("fb%d BLANK +\n", mfd->index);
+#ifdef CONFIG_LGE_FOTA_SILENT_RESET
+			fb_blank_called = true;
+#endif
 			mutex_lock(&mfd->update.lock);
 			mfd->update.type = NOTIFY_TYPE_SUSPEND;
 			mfd->update.is_suspend = 1;
@@ -1170,6 +1215,7 @@ static int mdss_fb_blank_sub(int blank_mode, struct fb_info *info,
 				mdss_fb_release_fences(mfd);
 			mfd->op_enable = true;
 			complete(&mfd->power_off_comp);
+			pr_info("fb%d BLANK -\n", mfd->index);
 		}
 		break;
 	}
@@ -1246,6 +1292,7 @@ void mdss_fb_free_fb_ion_memory(struct msm_fb_data_type *mfd)
 
 	mfd->fbi->screen_base = NULL;
 	mfd->fbi->fix.smem_start = 0;
+	mfd->fbi->fix.smem_len = 0;
 
 	ion_unmap_kernel(mfd->fb_ion_client, mfd->fb_ion_handle);
 
@@ -1478,8 +1525,13 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 	var->grayscale = 0,	/* No graylevels */
 	var->nonstd = 0,	/* standard pixel format */
 	var->activate = FB_ACTIVATE_VBL,	/* activate it at vsync */
+#ifdef CONFIG_MACH_LGE
+	var->height = 120,	/* height of picture in mm */
+	var->width = 68,	/* width of picture in mm */
+#else
 	var->height = -1,	/* height of picture in mm */
 	var->width = -1,	/* width of picture in mm */
+#endif
 	var->accel_flags = 0,	/* acceleration flags */
 	var->sync = 0,	/* see FB_SYNC_* */
 	var->rotate = 0,	/* angle we rotate counter clockwise */
@@ -1676,6 +1728,12 @@ static int mdss_fb_register(struct msm_fb_data_type *mfd)
 
 	pr_info("FrameBuffer[%d] %dx%d registered successfully!\n", mfd->index,
 					fbi->var.xres, fbi->var.yres);
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	/* save fb address for crash handler display buffer */
+	if (mfd->index == 0)
+		lge_set_fb_addr((unsigned int)mfd->fbi->fix.smem_start);
+#endif
 
 	return 0;
 }
@@ -2214,7 +2272,7 @@ static int mdss_fb_pan_display_ex(struct fb_info *info,
 	if (!mfd || (!mfd->op_enable))
 		return -EPERM;
 
-	// allow pan-display for CMD panels in DCM state at panel-off
+	/* allow pan-display for CMD panels in DCM state at panel-off */
 	if ((mdss_fb_is_power_off(mfd)) &&
 		!((mfd->dcm_state == DCM_ENTER) &&
 		(mfd->panel.type == MIPI_CMD_PANEL)))
@@ -2913,6 +2971,14 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	int ret = -ENOSYS;
 	struct mdp_buf_sync buf_sync;
 	struct msm_sync_pt_data *sync_pt_data = NULL;
+#ifdef CONFIG_MACH_LGE
+	u32 dsi_panel_invert = 0;
+#endif
+
+#if defined(CONFIG_LGE_BROADCAST_TDMB)
+	int dmb_flag = 0;
+	struct mdp_csc_cfg dmb_csc_cfg;
+#endif /*               */
 
 	if (!info || !info->par)
 		return -EINVAL;
@@ -2978,6 +3044,30 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 	case MSMFB_DISPLAY_COMMIT:
 		ret = mdss_fb_display_commit(info, argp);
 		break;
+#ifdef CONFIG_MACH_LGE
+	case MSMFB_INVERT_PANEL:
+		ret = copy_from_user(&dsi_panel_invert, argp, sizeof(int));
+		if (ret)
+			return ret;
+		ret = mdss_dsi_panel_invert(dsi_panel_invert);
+		break;
+#endif
+
+#if defined(CONFIG_LGE_BROADCAST_TDMB)
+	case MSMFB_DMB_SET_FLAG:
+		ret = copy_from_user(&dmb_flag, argp, sizeof(int));
+		if (ret)
+			return ret;
+		ret = pp_set_dmb_status(dmb_flag);
+		break;
+	case MSMFB_DMB_SET_CSC_MATRIX:
+		ret = copy_from_user(&dmb_csc_cfg, argp, sizeof(dmb_csc_cfg));
+		if (ret)
+			return ret;
+		memcpy(dmb_csc_convert.csc_mv, dmb_csc_cfg.csc_mv,
+				sizeof(dmb_csc_cfg.csc_mv));
+		break;
+#endif /*               */
 
 	default:
 		if (mfd->mdp.ioctl_handler)

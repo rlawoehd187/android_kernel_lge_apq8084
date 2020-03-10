@@ -390,8 +390,13 @@ int mdss_mdp_perf_calc_pipe(struct mdss_mdp_pipe *pipe,
 		struct mdss_panel_info *pinfo;
 
 		pinfo = &mixer->ctl->panel_data->panel_info;
-		fps = mdss_panel_get_framerate(pinfo);
-		v_total = mdss_panel_get_vtotal(pinfo);
+		if (pinfo->type == MIPI_VIDEO_PANEL) {
+			fps = pinfo->panel_max_fps;
+			v_total = pinfo->panel_max_vtotal;
+		} else {
+			fps = mdss_panel_get_framerate(pinfo);
+			v_total = mdss_panel_get_vtotal(pinfo);
+		}
 		xres = pinfo->xres;
 		is_fbc = pinfo->fbc.enabled;
 		h_total = mdss_panel_get_htotal(pinfo, false);
@@ -527,8 +532,13 @@ static void mdss_mdp_perf_calc_mixer(struct mdss_mdp_mixer *mixer,
 	if (!mixer->rotator_mode) {
 		if (mixer->type == MDSS_MDP_MIXER_TYPE_INTF) {
 			pinfo = &mixer->ctl->panel_data->panel_info;
-			fps = mdss_panel_get_framerate(pinfo);
-			v_total = mdss_panel_get_vtotal(pinfo);
+			if (pinfo->type == MIPI_VIDEO_PANEL) {
+				fps = pinfo->panel_max_fps;
+				v_total = pinfo->panel_max_vtotal;
+			} else {
+				fps = mdss_panel_get_framerate(pinfo);
+				v_total = mdss_panel_get_vtotal(pinfo);
+			}
 
 			if (pinfo->type == WRITEBACK_PANEL)
 				pinfo = NULL;
@@ -819,6 +829,13 @@ static void mdss_mdp_perf_calc_ctl(struct mdss_mdp_ctl *ctl,
 	struct mdss_mdp_pipe *right_plist[MAX_PIPES_PER_LM];
 	int i, left_cnt = 0, right_cnt = 0;
 
+#ifdef CONFIG_MACH_LGE
+	struct mdss_overlay_private *mdp5_data = NULL;
+
+	if (ctl->mfd)
+		mdp5_data = mfd_to_mdp5_data(ctl->mfd);
+#endif
+
 	for (i = 0; i < MAX_PIPES_PER_LM; i++) {
 		if (ctl->mixer_left && ctl->mixer_left->stage_pipe[i]) {
 			left_plist[left_cnt] =
@@ -841,8 +858,17 @@ static void mdss_mdp_perf_calc_ctl(struct mdss_mdp_ctl *ctl,
 			perf->bw_ctl = apply_fudge_factor(perf->bw_ctl,
 				&mdss_res->ib_factor_overlap);
 		else
-			perf->bw_ctl = apply_fudge_factor(perf->bw_ctl,
-				&mdss_res->ib_factor);
+#ifdef CONFIG_MACH_LGE
+			if (mdp5_data && mdp5_data->bw_limit) {
+				/* change the value as you want but should not cause underrun */
+				pr_debug(" B/W limited !!!\n");
+				perf->bw_ctl = apply_fudge_factor(perf->bw_overlap,
+					&mdss_res->ib_factor_limit);
+			} else
+#endif
+				perf->bw_ctl = apply_fudge_factor(perf->bw_ctl,
+					&mdss_res->ib_factor);
+
 	}
 	pr_debug("ctl=%d clk_rate=%u\n", ctl->num, perf->mdp_clk_rate);
 	pr_debug("bw_overlap=%llu bw_prefill=%llu prefill_bytes=%d mode:%d\n",
@@ -2787,11 +2813,17 @@ int mdss_mdp_ctl_update_fps(struct mdss_mdp_ctl *ctl, int fps)
 	int ret = 0;
 	struct mdss_mdp_ctl *sctl = NULL;
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	pr_debug("%s + : trying to fps = %d\n", __func__, fps);
+#endif
 	sctl = mdss_mdp_get_split_ctl(ctl);
 
 	if (ctl->config_fps_fnc)
 		ret = ctl->config_fps_fnc(ctl, sctl, fps);
 
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	pr_debug("%s - : fps = %d\n", __func__, fps);
+#endif
 	return ret;
 }
 

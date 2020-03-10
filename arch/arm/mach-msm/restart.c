@@ -38,6 +38,11 @@
 #include "timer.h"
 #include "wdog_debug.h"
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#include <mach/board_lge.h>
+#endif
+
 #define WDT0_RST	0x38
 #define WDT0_EN		0x40
 #define WDT0_BARK_TIME	0x4C
@@ -71,7 +76,7 @@ static void *emergency_dload_mode_addr;
 
 /* Download mode master kill-switch */
 static int dload_set(const char *val, struct kernel_param *kp);
-static int download_mode = 1;
+static int download_mode = 0;
 module_param_call(download_mode, dload_set, param_get_int,
 			&download_mode, 0644);
 static int panic_prep_restart(struct notifier_block *this,
@@ -101,6 +106,7 @@ static bool get_dload_mode(void)
 	return dload_mode_enabled;
 }
 
+#ifndef CONFIG_LGE_HANDLE_PANIC
 static void enable_emergency_dload_mode(void)
 {
 	if (emergency_dload_mode_addr) {
@@ -119,6 +125,7 @@ static void enable_emergency_dload_mode(void)
 		mb();
 	}
 }
+#endif
 
 static int dload_set(const char *val, struct kernel_param *kp)
 {
@@ -135,6 +142,11 @@ static int dload_set(const char *val, struct kernel_param *kp)
 		download_mode = old_val;
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	if (lge_get_laf_mode() == LGE_LAF_MODE_LAF)
+		download_mode = 1;
+#endif
 
 	set_dload_mode(download_mode);
 
@@ -177,7 +189,10 @@ static void halt_spmi_pmic_arbiter(void)
 
 static void __msm_power_off(int lower_pshold)
 {
-	printk(KERN_CRIT "Powering off the SoC\n");
+	struct task_struct *task = current_thread_info()->task;
+
+	printk(KERN_CRIT "Powering off the SoC (pid: %d, comm: %s)\n",
+			task->pid, task->comm);
 #ifdef CONFIG_MSM_DLOAD_MODE
 	set_dload_mode(0);
 #endif
@@ -210,10 +225,6 @@ static void msm_restart_prepare(const char *cmd)
 	/* Write download mode flags if we're panic'ing */
 	set_dload_mode(in_panic);
 
-	/* Write download mode flags if restart_mode says so */
-	if (restart_mode == RESTART_DLOAD)
-		set_dload_mode(1);
-
 	/* Kill download mode if master-kill switch is set */
 	if (!download_mode)
 		set_dload_mode(0);
@@ -222,7 +233,12 @@ static void msm_restart_prepare(const char *cmd)
 	pm8xxx_reset_pwr_off(1);
 
 	/* Hard reset the PMIC unless memory contents must be maintained. */
+#ifdef CONFIG_MACH_LGE
+	/*                                                                          */
+	if (true || get_dload_mode() || (cmd != NULL && cmd[0] != '\0'))
+#else
 	if (get_dload_mode() || (cmd != NULL && cmd[0] != '\0'))
+#endif
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 	else
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
@@ -232,18 +248,42 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x77665500, restart_reason);
 		} else if (!strncmp(cmd, "recovery", 8)) {
 			__raw_writel(0x77665502, restart_reason);
+		} else if (!strncmp(cmd, "fota", 4)) {
+			__raw_writel(0x77665566, restart_reason);
+		/*                                     */
+		//} else if (!strncmp(cmd, "--bnr_recovery", 14)) {
+		//	__raw_writel(0x77665555, restart_reason);
 		} else if (!strcmp(cmd, "rtc")) {
 			__raw_writel(0x77665503, restart_reason);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			code = simple_strtoul(cmd + 4, NULL, 16) & 0xff;
 			__raw_writel(0x6f656d00 | code, restart_reason);
+#ifdef CONFIG_LGE_FOTA_SILENT_RESET
+		} else if (!strncmp(cmd, "FOTA LCD off", 12)) {
+			__raw_writel(0x77665560, restart_reason);
+		} else if (!strncmp(cmd, "FOTA OUT LCD off", 16)) {
+			__raw_writel(0x77665561, restart_reason);
+#endif
+#ifndef CONFIG_LGE_HANDLE_PANIC
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+#endif
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
 	}
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	else {
+		__raw_writel(0x77665503, restart_reason);
+	}
+
+	if (restart_mode == RESTART_DLOAD)
+		lge_set_restart_reason(LAF_DLOAD_MODE);
+
+	if (in_panic)
+		lge_set_panic_reason();
+#endif
 
 	flush_cache_all();
 	outer_flush_all();
@@ -251,7 +291,10 @@ static void msm_restart_prepare(const char *cmd)
 
 void msm_restart(char mode, const char *cmd)
 {
-	printk(KERN_NOTICE "Going down for restart now\n");
+	struct task_struct *task = current_thread_info()->task;
+
+	printk(KERN_NOTICE "Going down for restart now (pid: %d, comm: %s)\n",
+			task->pid, task->comm);
 
 	msm_restart_prepare(cmd);
 
@@ -268,6 +311,11 @@ static int __init msm_restart_init(void)
 {
 	struct device_node *np;
 	int ret = 0;
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	if (lge_get_laf_mode() == LGE_LAF_MODE_LAF)
+		download_mode = 1;
+#endif
 
 #ifdef CONFIG_MSM_DLOAD_MODE
 	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);

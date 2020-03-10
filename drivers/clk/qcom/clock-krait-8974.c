@@ -32,6 +32,11 @@
 
 #include "clock.h"
 
+#ifdef CONFIG_LGE_PM
+#include <mach/board_lge.h>
+#include <linux/power/lge_battery_id.h>
+#endif
+
 /* Clock inputs coming into Krait subsystem */
 DEFINE_FIXED_DIV_CLK(hfpll_src_clk, 1, NULL);
 DEFINE_FIXED_DIV_CLK(acpu_aux_clk, 2, NULL);
@@ -574,6 +579,7 @@ static void get_krait_bin_format_b(struct platform_device *pdev,
 	}
 
 	dev_info(&pdev->dev, "PVS version: %d\n", *pvs_ver);
+	set_speed_pvs_bin(*speed, *pvs);
 
 	devm_iounmap(&pdev->dev, base);
 }
@@ -791,6 +797,21 @@ static int clock_krait_8974_driver_probe(struct platform_device *pdev)
 	snprintf(table_name, ARRAY_SIZE(table_name),
 			"qcom,speed%d-pvs%d-bin-v%d", speed, pvs, pvs_ver);
 
+#ifdef CONFIG_LGE_PM
+	if (lge_get_factory_boot() &&
+		lge_get_batt_id() == BATT_ID_UNKNOWN) {
+		dev_err(dev, "set to load voltage plan for factory mode!!!\n");
+		ret = parse_tbl(dev, "qcom,factory-mode-ctable", 3,
+				(u32 **) &freq, (u32 **) &uv, (u32 **) &ua);
+		if (ret < 0) {
+			dev_err(dev, "Unable to load safe voltage plan\n");
+		} else {
+			dev_info(dev, "Safe voltage plan loaded.\n");
+			pvs = 0;
+			rows = ret;
+		}
+	} else {
+
 	rows = parse_tbl(dev, table_name, 3,
 			(u32 **) &freq, (u32 **) &uv, (u32 **) &ua);
 	if (rows < 0) {
@@ -867,6 +888,9 @@ static int clock_krait_8974_driver_probe(struct platform_device *pdev)
 			}
 		}
 	}
+
+	}
+#endif
 
 	krait_update_uv(uv, rows, pvs ? 25000 : 0);
 

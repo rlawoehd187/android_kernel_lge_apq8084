@@ -37,6 +37,12 @@
 #include <mach/msm_bus.h>
 #include "msm_iommu_pagetable.h"
 
+/*                                                                                          */
+#include <linux/thermal.h>
+#include "../thermal/thermal_core.h"
+/*                                                                                          */
+
+
 #ifdef CONFIG_IOMMU_LPAE
 /* bitmap of the page sizes currently supported */
 #define MSM_IOMMU_PGSIZES	(SZ_4K | SZ_64K | SZ_2M | SZ_32M | SZ_1G)
@@ -1200,6 +1206,31 @@ irqreturn_t msm_iommu_fault_handler_v2(int irq, void *dev_id)
 			pr_err("Interesting registers:\n");
 			__print_ctx_regs(drvdata->cb_base,
 					ctx_drvdata->num, fsr);
+
+/*                                                                                          */
+			if(!strcmp(drvdata->name,"vfe_iommu"))
+			{
+				struct thermal_zone_device *temp1_sensor5;
+				long unsigned int temperature;
+
+				char themp_sensor_name[4][20] = {
+					"tsens_tz_sensor5", 
+					"tsens_tz_sensor6",
+					"tsens_tz_sensor7", 
+					"tsens_tz_sensor8"
+				};
+				
+				int i=0;
+
+				for (i=0; i < 4; i++)
+				{
+					temp1_sensor5 = thermal_zone_get_zone_by_name(themp_sensor_name[i]);
+					thermal_zone_get_temp(temp1_sensor5,&temperature);
+					pr_err("%s:for confiming thermal issus %s temp=%lu\n",__func__,themp_sensor_name[i],temperature);
+				}
+			}
+/*                                                                                          */
+			
 		}
 
 		if (ret != -EBUSY)

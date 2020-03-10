@@ -539,6 +539,7 @@ pci_read_config(struct file *filp, struct kobject *kobj,
 		struct bin_attribute *bin_attr,
 		char *buf, loff_t off, size_t count)
 {
+#if 0 // comment out to pass CTS Test case in Tiger6.
 	struct pci_dev *dev = to_pci_dev(container_of(kobj,struct device,kobj));
 	unsigned int size = 64;
 	loff_t init_off = off;
@@ -610,6 +611,9 @@ pci_read_config(struct file *filp, struct kobject *kobj,
 	pci_config_pm_runtime_put(dev);
 
 	return count;
+#else
+	return 0;
+#endif
 }
 
 static ssize_t

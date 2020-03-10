@@ -266,6 +266,38 @@ out:
 	return ret;
 }
 
+#ifdef FEATURE_LGE_MODEM_DEBUG_INFO
+int sysmon_get_debug_info(enum subsys_id dest_ss, char *buf, size_t len)
+{
+    struct sysmon_subsys *ss = &subsys[dest_ss];
+    const char tx_buf[] = "ssr:debug:info";
+    const char expect[] = "ssr:debug:return:";
+    size_t prefix_len = ARRAY_SIZE(expect) - 1;
+    int ret;
+
+    if (ss->dev == NULL)
+        return -ENODEV;
+
+    if (dest_ss < 0 || dest_ss >= SYSMON_NUM_SS ||
+        buf == NULL || len == 0)
+        return -EINVAL;
+
+    mutex_lock(&ss->lock);
+    ret = sysmon_send_msg(ss, tx_buf, ARRAY_SIZE(tx_buf));
+    if (ret)
+        goto out;
+
+    if (strncmp(ss->rx_buf, expect, prefix_len)) {
+        ret = -ENOSYS;
+        goto out;
+    }
+    strlcpy(buf, ss->rx_buf + prefix_len, len);
+out:
+    mutex_unlock(&ss->lock);
+    return ret;
+}
+#endif
+
 static void sysmon_smd_notify(void *priv, unsigned int smd_event)
 {
 	struct sysmon_subsys *ss = priv;

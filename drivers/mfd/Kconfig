@@ -16,7 +16,7 @@ config MFD_CS5535
 	depends on PCI && X86
 	---help---
 	  This is the core driver for CS5535/CS5536 MFD functions.  This is
-          necessary for using the board's GPIO and MFGPT functionality.
+	  necessary for using the board's GPIO and MFGPT functionality.
 
 config MFD_AS3711
 	bool "AMS AS3711"
@@ -80,7 +80,7 @@ config MFD_ASIC3
 	bool "Compaq ASIC3"
 	depends on GENERIC_HARDIRQS && GPIOLIB && ARM
 	select MFD_CORE
-	 ---help---
+	---help---
 	  This driver supports the ASIC3 multifunction chip found on many
 	  PDAs (mainly iPAQ and HTC based ones)
 
@@ -173,9 +173,9 @@ config HTC_EGPIO
 	bool "HTC EGPIO support"
 	depends on GENERIC_HARDIRQS && GPIOLIB && ARM
 	help
-	    This driver supports the CPLD egpio chip present on
-	    several HTC phones.  It provides basic support for input
-	    pins, output pins, and irqs.
+	  This driver supports the CPLD egpio chip present on
+	  several HTC phones.  It provides basic support for input
+	  pins, output pins, and irqs.
 
 config HTC_PASIC3
 	tristate "HTC PASIC3 LED/DS1WM chip support"
@@ -303,6 +303,19 @@ config MFD_MAX77693
 	  additional drivers must be enabled in order to use the functionality
 	  of the device.
 
+config MFD_MAX77819
+	bool "Maxim Integrated MAX77819 PMIC Support"
+	depends on I2C=y && GENERIC_HARDIRQS
+	select MFD_CORE
+	select REGMAP_I2C
+	select REGMAP_IRQ
+	default n
+	help
+	  Say yes here to support for Maxim MAX77819. This is a Power Management IC.
+	  This driver provies common support for accessing the device,
+	  additional drivers must be enabled in order to use the functionality
+	  of the device.
+
 config MFD_MAX8907
 	tristate "Maxim Semiconductor MAX8907 PMIC Support"
 	select MFD_CORE
@@ -357,7 +370,7 @@ config EZX_PCAP
 	  needed for MMC, TouchScreen, Sound, USB, etc..
 
 config MFD_VIPERBOARD
-        tristate "Nano River Technologies Viperboard"
+	tristate "Nano River Technologies Viperboard"
 	select MFD_CORE
 	depends on USB && GENERIC_HARDIRQS
 	default n
@@ -393,15 +406,15 @@ config PCF50633_ADC
 	tristate "NXP PCF50633 ADC"
 	depends on MFD_PCF50633
 	help
-	 Say yes here if you want to include support for ADC in the
-	 NXP PCF50633 chip.
+	  Say yes here if you want to include support for ADC in the
+	  NXP PCF50633 chip.
 
 config PCF50633_GPIO
 	tristate "NXP PCF50633 GPIO"
 	depends on MFD_PCF50633
 	help
-	 Say yes here if you want to include support GPIO for pins on
-	 the PCF50633 chip.
+	  Say yes here if you want to include support GPIO for pins on
+	  the PCF50633 chip.
 
 config UCB1400_CORE
 	tristate "Philips UCB1400 Core driver"
@@ -482,10 +495,10 @@ config MFD_SEC_CORE
 	select REGMAP_I2C
 	select REGMAP_IRQ
 	help
-	 Support for the Samsung Electronics MFD series.
-	 This driver provides common support for accessing the device,
-	 additional drivers must be enabled in order to use the functionality
-	 of the device
+	  Support for the Samsung Electronics MFD series.
+	  This driver provides common support for accessing the device,
+	  additional drivers must be enabled in order to use the functionality
+	  of the device
 
 config MFD_SI476X_CORE
 	tristate "Silicon Laboratories 4761/64/68 AM/FM radio."
@@ -502,7 +515,7 @@ config MFD_SI476X_CORE
 
 config MFD_SM501
 	tristate "Silicon Motion SM501"
-	 ---help---
+	---help---
 	  This is the core driver for the Silicon Motion SM501 multimedia
 	  companion chip. This device is a multifunction device which may
 	  provide numerous interfaces including USB host controller, USB gadget,
@@ -513,22 +526,22 @@ config MFD_SM501
 config MFD_SM501_GPIO
 	bool "Export GPIO via GPIO layer"
 	depends on MFD_SM501 && GPIOLIB
-	 ---help---
-	 This option uses the gpio library layer to export the 64 GPIO
-	 lines on the SM501. The platform data is used to supply the
-	 base number for the first GPIO line to register.
+	---help---
+	  This option uses the gpio library layer to export the 64 GPIO
+	  lines on the SM501. The platform data is used to supply the
+	  base number for the first GPIO line to register.
 
 config MFD_SMSC
-       bool "SMSC ECE1099 series chips"
-       depends on I2C=y && GENERIC_HARDIRQS
-       select MFD_CORE
-       select REGMAP_I2C
-       help
-        If you say yes here you get support for the
-        ece1099 chips from SMSC.
+	bool "SMSC ECE1099 series chips"
+	depends on I2C=y && GENERIC_HARDIRQS
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  If you say yes here you get support for the
+	  ece1099 chips from SMSC.
 
-        To compile this driver as a module, choose M here: the
-        module will be called smsc.
+	  To compile this driver as a module, choose M here: the
+	  module will be called smsc.
 
 config ABX500_CORE
 	bool "ST-Ericsson ABX500 Mixed Signal Circuit register functions"
@@ -578,12 +591,12 @@ config AB8500_CORE
 	  This chip embeds various other multimedia funtionalities as well.
 
 config AB8500_DEBUG
-       bool "Enable debug info via debugfs"
-       depends on AB8500_GPADC && DEBUG_FS
-       default y if DEBUG_FS
-       help
-         Select this option if you want debug information using the debug
-         filesystem, debugfs.
+	bool "Enable debug info via debugfs"
+	depends on AB8500_GPADC && DEBUG_FS
+	default y if DEBUG_FS
+	help
+	  Select this option if you want debug information using the debug
+	  filesystem, debugfs.
 
 config AB8500_GPADC
 	bool "ST-Ericsson AB8500 GPADC driver"
@@ -612,19 +625,19 @@ config MFD_STMPE
 
 	  Currently supported devices are:
 
-		STMPE811: GPIO, Touchscreen
-		STMPE1601: GPIO, Keypad
-		STMPE1801: GPIO, Keypad
-		STMPE2401: GPIO, Keypad
-		STMPE2403: GPIO, Keypad
+	        STMPE811: GPIO, Touchscreen
+	        STMPE1601: GPIO, Keypad
+	        STMPE1801: GPIO, Keypad
+	        STMPE2401: GPIO, Keypad
+	        STMPE2403: GPIO, Keypad
 
 	  This driver provides common support for accessing the device,
 	  additional drivers must be enabled in order to use the functionality
 	  of the device.  Currently available sub drivers are:
 
-		GPIO: stmpe-gpio
-		Keypad: stmpe-keypad
-		Touchscreen: stmpe-ts
+	        GPIO: stmpe-gpio
+	        Keypad: stmpe-keypad
+	        Touchscreen: stmpe-ts
 
 menu "STMicroelectronics STMPE Interface Drivers"
 depends on MFD_STMPE
@@ -773,6 +786,15 @@ config MFD_TPS65090
 	  This driver provides common support for accessing the device,
 	  additional drivers must be enabled in order to use the
 	  functionality of the device.
+
+config MFD_TPS65132
+	bool "TPS65132 Power Management chip"
+	depends on I2C
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  if you say yes here you get support for the TPS65132 series of
+	  Power Management chips.
 
 config MFD_TPS65217
 	tristate "TI TPS65217 Power Management / White LED chips"
@@ -953,11 +975,11 @@ config MFD_TIMBERDALE
 	select MFD_CORE
 	depends on PCI && GPIOLIB
 	---help---
-	This is the core driver for the timberdale FPGA. This device is a
-	multifunction device which exposes numerous platform devices.
+	  This is the core driver for the timberdale FPGA. This device is a
+	  multifunction device which exposes numerous platform devices.
 
-	The timberdale FPGA can be found on the Intel Atom development board
-	for in-vehicle infontainment, called Russellville.
+	  The timberdale FPGA can be found on the Intel Atom development board
+	  for in-vehicle infontainment, called Russellville.
 
 config MFD_TC3589X
 	bool "Toshiba TC35892 and variants"
@@ -1117,24 +1139,24 @@ config MFD_WM8994
 	  functionaltiy of the device other drivers must be enabled.
 
 config WCD9304_CODEC
-        tristate "WCD9304 Codec"
-        select SLIMBUS
-        select MFD_CORE
-        default n
-        help
-          Enables the WCD9304 core driver. The core driver provides
-          read/write capability to registers which are part of the
-          WCD9304 core and gives the ability to use the WCD9304 codec.
+	tristate "WCD9304 Codec"
+	select SLIMBUS
+	select MFD_CORE
+	default n
+	help
+	  Enables the WCD9304 core driver. The core driver provides
+	  read/write capability to registers which are part of the
+	  WCD9304 core and gives the ability to use the WCD9304 codec.
 
 config WCD9310_CODEC
-        tristate "WCD9310 Codec"
-        select SLIMBUS
-        select MFD_CORE
-        default n
-        help
-          Enables the WCD9310 core driver. The core driver provides
-          read/write capability to registers which are part of the
-          WCD9310 core and gives the ability to use the WCD9310 codec.
+	tristate "WCD9310 Codec"
+	select SLIMBUS
+	select MFD_CORE
+	default n
+	help
+	  Enables the WCD9310 core driver. The core driver provides
+	  read/write capability to registers which are part of the
+	  WCD9310 core and gives the ability to use the WCD9310 codec.
 
 config WCD9320_CODEC
 	tristate "WCD9320 Codec"
@@ -1157,7 +1179,6 @@ config WCD9306_CODEC
 	  WCD9306 core and gives the ability to use the WCD9306 codec.
 	  The WCD9306 codec supports either I2C/I2S or Slimbus for
 	  control and data exchnage with master processor.
-
 endmenu
 endif
 
@@ -1182,7 +1203,6 @@ config MCP_UCB1200
 config MCP_UCB1200_TS
 	tristate "Touchscreen interface support"
 	depends on MCP_UCB1200 && INPUT
-
 endmenu
 
 config VEXPRESS_CONFIG

@@ -29,6 +29,7 @@
 #include <mach/msm_iomap.h>
 #include <linux/debugfs.h>
 #include <asm/unaligned.h>
+#include <linux/pm_qos.h>
 
 #include "xhci.h"
 
@@ -134,6 +135,8 @@ struct mxhci_hsic_hcd {
 	struct tasklet_struct	bh;
 	unsigned		handled_event_cnt;
 	unsigned		cpu_yield_cnt;
+
+	struct pm_qos_request pm_qos_req_dma;
 };
 
 #define SYNOPSIS_DWC3_VENDOR	0x5533
@@ -797,13 +800,24 @@ static int mxhci_hsic_bus_resume(struct usb_hcd *hcd)
 	int ret;
 	struct mxhci_hsic_hcd *mxhci = hcd_to_hsic(hcd->primary_hcd);
 	struct xhci_bus_state *bus_state;
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+	ktime_t now;
+	s64 mdiff;
+#endif
 
 	if (!usb_hcd_is_primary_hcd(hcd))
 		return 0;
 
 	if (mxhci->resume_gpio) {
 		bus_state = &mxhci->xhci->bus_state[hcd_index(hcd)];
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+		now = ktime_get();
+		mdiff = ktime_to_us(ktime_sub(now,
+					bus_state->last_susp_resume));
+		if (mdiff < 10000)
+#else
 		if (time_before_eq(jiffies, bus_state->next_statechange))
+#endif
 			usleep_range(10000, 11000);
 
 		xhci_dbg_log_event(&dbg_hsic, NULL, "resume gpio high",
@@ -893,9 +907,15 @@ static int mxhci_hsic_suspend(struct mxhci_hsic_hcd *mxhci)
 	/* disable force-on mode for periph_on */
 	clk_set_flags(mxhci->system_clk, CLKFLAG_NORETAIN_PERIPH);
 
+	pm_qos_update_request(&mxhci->pm_qos_req_dma, PM_QOS_DEFAULT_VALUE);
+
 	pm_relax(mxhci->dev);
 
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+	dev_info(mxhci->dev, "HSIC-USB in low power mode\n");
+#else
 	dev_dbg(mxhci->dev, "HSIC-USB in low power mode\n");
+#endif
 	xhci_dbg_log_event(&dbg_hsic, NULL, "Controller suspended", 0);
 
 	return 0;
@@ -913,6 +933,8 @@ static int mxhci_hsic_resume(struct mxhci_hsic_hcd *mxhci)
 	}
 
 	pm_stay_awake(mxhci->dev);
+
+	pm_qos_update_request(&mxhci->pm_qos_req_dma, PM_QOS_CPU_DMA_LATENCY);
 
 	/* enable force-on mode for periph_on */
 	clk_set_flags(mxhci->system_clk, CLKFLAG_RETAIN_PERIPH);
@@ -958,7 +980,11 @@ static int mxhci_hsic_resume(struct mxhci_hsic_hcd *mxhci)
 
 	mxhci->in_lpm = 0;
 
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+	dev_info(mxhci->dev, "HSIC-USB exited from low power mode\n");
+#else
 	dev_dbg(mxhci->dev, "HSIC-USB exited from low power mode\n");
+#endif
 	xhci_dbg_log_event(&dbg_hsic, NULL, "Controller resumed", 0);
 
 	return 0;
@@ -1627,6 +1653,9 @@ static int mxhci_hsic_probe(struct platform_device *pdev)
 	ret = mxhci_hsic_debugfs_init();
 	if (ret)
 		dev_dbg(&pdev->dev, "debugfs is not availabile\n");
+
+	pm_qos_add_request(&mxhci->pm_qos_req_dma, PM_QOS_CPU_DMA_LATENCY,
+			PM_QOS_DEFAULT_VALUE);
 	return 0;
 
 delete_wq:
@@ -1655,6 +1684,8 @@ static int mxhci_hsic_remove(struct platform_device *pdev)
 	u32 reg;
 
 	xhci_dbg_log_event(&dbg_hsic, NULL,  "mxhci_hsic_remove", 0);
+
+	pm_qos_remove_request(&mxhci->pm_qos_req_dma);
 
 	/* disable STROBE_PAD_CTL */
 	reg = readl_relaxed(TLMM_GPIO_HSIC_STROBE_PAD_CTL);

@@ -98,7 +98,6 @@ enum {
 	TOMTOM_TX16,
 	TOMTOM_TX_MAX,
 };
-
 extern int tomtom_mclk_enable(struct snd_soc_codec *codec, int mclk_enable,
 			     bool dapm);
 extern int tomtom_hs_detect(struct snd_soc_codec *codec,
@@ -117,4 +116,10 @@ extern void tomtom_register_ext_clk_cb(
 	int (*get_ext_clk_cnt) (void),
 	struct snd_soc_codec *codec);
 extern int tomtom_enable_qfuse_sensing(struct snd_soc_codec *codec);
+#ifdef CONFIG_INPUT_MAX14688
+/*                                                         */
+extern void tomtom_dec5_vol_mute(void);
+/*                                                                    */
+extern void tomtom_set_auto_pull_down(bool enable);
+#endif
 #endif

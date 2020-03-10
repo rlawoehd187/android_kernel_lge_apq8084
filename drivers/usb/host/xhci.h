@@ -1380,6 +1380,9 @@ struct dev_info {
 struct xhci_bus_state {
 	unsigned long		bus_suspended;
 	unsigned long		next_statechange;
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+	ktime_t			last_susp_resume;
+#endif
 
 	/* Port suspend arrays are indexed by the portnum of the fake roothub */
 	/* ports suspend status arrays - max 31 ports for USB2, 15 for USB3 */

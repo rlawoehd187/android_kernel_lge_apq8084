@@ -70,6 +70,7 @@ struct lpm_system_state {
 	int num_system_levels;
 	enum msm_pm_sleep_mode sync_cpu_mode;
 	int last_entered_cluster_index;
+	uint32_t last_l2_mode;
 	bool allow_synched_levels;
 	bool no_l2_saw;
 	spinlock_t sync_lock;
@@ -398,6 +399,7 @@ static void lpm_system_prepare(struct lpm_system_state *system_state,
 		time = sched_clock();
 skip_rpm:
 	system_state->last_entered_cluster_index = index;
+	system_state->last_l2_mode = lvl->l2_mode;
 	spin_unlock(&system_state->sync_lock);
 	return;
 

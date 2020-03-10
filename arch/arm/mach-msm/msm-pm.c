@@ -44,6 +44,10 @@
 #include "clock.h"
 #include "pm-boot.h"
 
+#ifdef CONFIG_LGE_PM
+#include <mach/board_lge.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/trace_msm_low_power.h>
 
@@ -75,7 +79,6 @@ enum msm_pc_count_offsets {
 	MSM_PC_ENTRY_COUNTER,
 	MSM_PC_EXIT_COUNTER,
 	MSM_PC_FALLTHRU_COUNTER,
-	MSM_PC_UNUSED,
 	MSM_PC_NUM_COUNTERS,
 };
 
@@ -420,13 +423,20 @@ static enum msm_pm_time_stats_id msm_pm_power_collapse(bool from_idle)
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
 		pr_info("CPU%u: %s: pre power down\n", cpu, __func__);
 
+#ifdef CONFIG_LGE_PM
+	if (!from_idle && cpu_online(cpu))
+		gpio_debug_print();
+#endif
+
 	/* This spews a lot of messages when a core is hotplugged. This
 	 * information is most useful from last core going down during
 	 * power collapse
 	 */
+#ifndef CONFIG_LGE_PM
 	if ((!from_idle && cpu_online(cpu))
 			|| (MSM_PM_DEBUG_IDLE_CLK & msm_pm_debug_mask))
 		clock_debug_print_enabled();
+#endif
 
 	avsdscr = avs_get_avsdscr();
 	avscsr = avs_get_avscsr();
@@ -434,6 +444,12 @@ static enum msm_pm_time_stats_id msm_pm_power_collapse(bool from_idle)
 
 	if (cpu_online(cpu) && !msm_no_ramp_down_pc)
 		saved_acpuclk_rate = ramp_down_last_cpu(cpu);
+
+#ifdef CONFIG_LGE_PM
+	if ((!from_idle && cpu_online(cpu))
+			|| (MSM_PM_DEBUG_IDLE_CLK & msm_pm_debug_mask))
+		clock_debug_print_enabled();
+#endif
 
 	collapsed = msm_pm_spm_power_collapse(cpu, from_idle, true);
 

@@ -28,6 +28,10 @@
 #include <soc/qcom/scm.h>
 #include <soc/qcom/memory_dump.h>
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#endif
+
 #define MODULE_NAME "msm_watchdog"
 #define WDT0_ACCSCSSNBARK_INT 0
 #define TCSR_WDT_CFG	0x30
@@ -84,6 +88,20 @@ module_param(enable, int, 0);
 static long WDT_HZ = 32765;
 module_param(WDT_HZ, long, 0);
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+static void __iomem *msm_timer0_base;
+
+void __iomem *wdt_timer_get_timer0_base(void)
+{
+	return msm_timer0_base;
+}
+
+static void wdt_timer_set_timer0_base(void __iomem * iomem)
+{
+	msm_timer0_base = iomem;
+}
+#endif
+
 static void pet_watchdog_work(struct work_struct *work);
 static void init_watchdog_work(struct work_struct *work);
 
@@ -137,6 +155,9 @@ static int panic_wdog_handler(struct notifier_block *this,
 		__raw_writel(WDT_HZ * (panic_timeout + 10),
 				wdog_dd->base + WDT0_BITE_TIME);
 		__raw_writel(1, wdog_dd->base + WDT0_RST);
+#ifdef CONFIG_LGE_HANDLE_PANIC
+		__raw_writel(1, wdog_dd->base + WDT0_EN);
+#endif
 	}
 	return NOTIFY_DONE;
 }
@@ -258,6 +279,8 @@ static void pet_watchdog(struct msm_watchdog_data *wdog_dd)
 	if (slack_ns < wdog_dd->min_slack_ns)
 		wdog_dd->min_slack_ns = slack_ns;
 	wdog_dd->last_pet = time_ns;
+
+	printk(KERN_INFO "%s\n", __func__);
 }
 
 static void keep_alive_response(void *info)
@@ -331,6 +354,10 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	unsigned long nanosec_rem;
 	unsigned long long t = sched_clock();
 
+	/* reset watchdog timer to avoid unexpected watchdog bite */
+	__raw_writel(1, wdog_dd->base + WDT0_RST);
+	mb();
+
 	nanosec_rem = do_div(t, 1000000000);
 	printk(KERN_INFO "Watchdog bark! Now = %lu.%06lu\n", (unsigned long) t,
 		nanosec_rem / 1000);
@@ -341,12 +368,17 @@ static irqreturn_t wdog_bark_handler(int irq, void *dev_id)
 	if (wdog_dd->do_ipi_ping)
 		dump_cpu_alive_mask(wdog_dd);
 	printk(KERN_INFO "Causing a watchdog bite!");
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	lge_set_restart_reason(LGE_RB_MAGIC | LGE_ERR_TZ | LGE_ERR_TZ_WDT_BARK);
+#endif
+
 	__raw_writel(1, wdog_dd->base + WDT0_BITE_TIME);
 	mb();
 	__raw_writel(1, wdog_dd->base + WDT0_RST);
 	mb();
 	/* Delay to make sure bite occurs */
-	mdelay(1);
+	mdelay(100);
 	pr_err("Wdog - STS: 0x%x, CTL: 0x%x, BARK TIME: 0x%x, BITE TIME: 0x%x",
 		__raw_readl(wdog_dd->base + WDT0_STS),
 		__raw_readl(wdog_dd->base + WDT0_EN),
@@ -557,6 +589,11 @@ static int msm_watchdog_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&wdog_dd->dogwork_struct, pet_watchdog_work);
 	queue_work_on(0, wdog_wq, &wdog_dd->init_dogwork_struct);
 	wdog_data = wdog_dd;
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	wdt_timer_set_timer0_base(wdog_dd->base);
+#endif
+
 	return 0;
 err:
 	destroy_workqueue(wdog_wq);

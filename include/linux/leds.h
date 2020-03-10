@@ -29,6 +29,13 @@ enum led_brightness {
 	LED_FULL	= 255,
 };
 
+enum WINDOW_COLORS {
+	WINDOW_COLOR_BK = 0,	/* Black */
+	WINDOW_COLOR_WH,	/* White */
+	WINDOW_COLOR_SV,	/* Silver */
+	WINDOW_COLOR_TK		/* Titan */
+};
+
 struct led_classdev {
 	const char		*name;
 	int			 brightness;

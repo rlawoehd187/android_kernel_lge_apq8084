@@ -788,10 +788,23 @@ static void msm_vfe44_update_camif_state(struct vfe_device *vfe_dev,
 		msm_camera_io_w_mb(0x0, vfe_dev->vfe_base + 0x2F4);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
 	} else if (update_state == DISABLE_CAMIF_IMMEDIATELY) {
+	/*Qualcomm WAR for camif error & VFE 44 violation*/
+	#ifdef CONFIG_MACH_LGE
+		vfe_dev->ignore_error = 1;
+//		vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev);
+		msm_camera_io_w_mb(0x6, vfe_dev->vfe_base + 0x2F4);
+//		vfe_dev->hw_info->vfe_ops.core_ops.reset_hw(vfe_dev);
+		vfe_dev->hw_info->vfe_ops.axi_ops.halt(vfe_dev,1);
+		vfe_dev->hw_info->vfe_ops.core_ops.reset_hw(vfe_dev,1,1);
+		vfe_dev->hw_info->vfe_ops.core_ops.init_hw_reg(vfe_dev);
+		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
+		vfe_dev->ignore_error = 0;
+	#else
 		vfe_dev->ignore_error = 1;
 		msm_camera_io_w_mb(0x6, vfe_dev->vfe_base + 0x2F4);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
 		vfe_dev->ignore_error = 0;
+	#endif
 	}
 }
 
@@ -1523,6 +1536,21 @@ vfe_no_resource:
 	return rc;
 }
 
+#ifndef MY_ERROR_IRQ
+//struct axi_ctrl_t *my_axi_ctrl;
+void msm_vfe44_process_my_error_irq(void)
+{
+
+	printk("vfe32_irq: image master my bus overflow !!!!\n");
+
+
+/*	v4l2_subdev_notify(&my_axi_ctrl->subdev, NOTIFY_VFE_ERROR,
+		(void *)NULL);
+	vfe32_send_isp_msg(&my_axi_ctrl->subdev,
+		my_axi_ctrl->share_ctrl->vfeFrameId, MSG_ID_VFE_ERROR);
+*/
+}
+#endif
 static void msm_vfe44_get_error_mask(
 	uint32_t *error_mask0, uint32_t *error_mask1)
 {

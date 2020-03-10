@@ -1307,6 +1307,9 @@ int xhci_bus_suspend(struct usb_hcd *hcd)
 	}
 	hcd->state = HC_STATE_SUSPENDED;
 	bus_state->next_statechange = jiffies + msecs_to_jiffies(10);
+#ifdef CONFIG_LGE_USB_XHCI_MSM_HSIC
+	bus_state->last_susp_resume = ktime_get();
+#endif
 	spin_unlock_irqrestore(&xhci->lock, flags);
 	return 0;
 }

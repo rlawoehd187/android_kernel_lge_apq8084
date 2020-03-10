@@ -71,6 +71,11 @@ static int high_perf_mode;
 module_param(high_perf_mode, int,
 			S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(high_perf_mode, "enable/disable class AB config for hph");
+#ifdef CONFIG_INPUT_MAX14688
+/*                                                         */
+static struct snd_soc_codec *tomtom_codec_priv = NULL;
+static bool aux_pull_down = false;
+#endif
 
 static struct afe_param_slimbus_slave_port_cfg tomtom_slimbus_slave_port_cfg = {
 	.minor_version = 1,
@@ -1361,6 +1366,45 @@ static int tomtom_tx_hpf_bypass_put(struct snd_kcontrol *kcontrol,
 
 static const struct snd_kcontrol_new tomtom_snd_controls[] = {
 
+#if defined(CONFIG_MACH_LGE)
+	SOC_SINGLE_SX_TLV("RX1 Digital Volume", TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX2 Digital Volume", TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX3 Digital Volume", TOMTOM_A_CDC_RX3_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX4 Digital Volume", TOMTOM_A_CDC_RX4_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX5 Digital Volume", TOMTOM_A_CDC_RX5_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX6 Digital Volume", TOMTOM_A_CDC_RX6_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX7 Digital Volume", TOMTOM_A_CDC_RX7_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("RX8 Digital Volume", TOMTOM_A_CDC_RX8_VOL_CTL_B2_CTL,
+		0, -60, 40, digital_gain),
+
+	SOC_SINGLE_SX_TLV("DEC1 Volume", TOMTOM_A_CDC_TX1_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC2 Volume", TOMTOM_A_CDC_TX2_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC3 Volume", TOMTOM_A_CDC_TX3_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC4 Volume", TOMTOM_A_CDC_TX4_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC5 Volume", TOMTOM_A_CDC_TX5_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC6 Volume", TOMTOM_A_CDC_TX6_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC7 Volume", TOMTOM_A_CDC_TX7_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC8 Volume", TOMTOM_A_CDC_TX8_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC9 Volume", TOMTOM_A_CDC_TX9_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+	SOC_SINGLE_SX_TLV("DEC10 Volume", TOMTOM_A_CDC_TX10_VOL_CTL_GAIN, 0,
+					  -60, 40, digital_gain),
+#else
 	SOC_SINGLE_SX_TLV("RX1 Digital Volume", TOMTOM_A_CDC_RX1_VOL_CTL_B2_CTL,
 		0, -84, 40, digital_gain),
 	SOC_SINGLE_SX_TLV("RX2 Digital Volume", TOMTOM_A_CDC_RX2_VOL_CTL_B2_CTL,
@@ -1398,6 +1442,7 @@ static const struct snd_kcontrol_new tomtom_snd_controls[] = {
 					  -84, 40, digital_gain),
 	SOC_SINGLE_SX_TLV("DEC10 Volume", TOMTOM_A_CDC_TX10_VOL_CTL_GAIN, 0,
 					  -84, 40, digital_gain),
+#endif
 
 	SOC_SINGLE_SX_TLV("IIR1 INP1 Volume", TOMTOM_A_CDC_IIR1_GAIN_B1_CTL, 0,
 					  -84, 40, digital_gain),
@@ -6805,7 +6850,11 @@ static const struct wcd9xxx_reg_mask_val tomtom_1_0_reg_defaults[] = {
 	TOMTOM_REG_VAL(TOMTOM_A_BUCK_CTRL_CCL_4, 0x51),
 	TOMTOM_REG_VAL(TOMTOM_A_NCP_DTEST, 0x10),
 	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_CHOP_CTL, 0xA4),
+#ifdef CONFIG_ENABLE_MBHC
 	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_OCP_CTL, 0x69),
+#else
+	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_OCP_CTL, 0x6B),
+#endif
 	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_CNP_WG_CTL, 0xDA),
 	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_CNP_WG_TIME, 0x15),
 	TOMTOM_REG_VAL(TOMTOM_A_RX_EAR_BIAS_PA, 0x76),
@@ -6948,6 +6997,11 @@ static const struct wcd9xxx_reg_mask_val tomtom_codec_reg_init_val[] = {
 
 	/* set MAD input MIC to DMIC1 */
 	{TOMTOM_A_CDC_MAD_INP_SEL, 0x0F, 0x08},
+
+#if defined(CONFIG_SWITCH_MAX1462X) || defined(CONFIG_INPUT_MAX14688)
+	/*                         */
+	{TOMTOM_A_MBHC_INSERT_DETECT, 0x04, 0x04},
+#endif
 };
 
 static const struct wcd9xxx_reg_mask_val tomtom_codec_2_0_reg_init_val[] = {
@@ -7759,7 +7813,6 @@ static int tomtom_cpe_initialize(struct snd_soc_codec *codec)
 
 	return 0;
 }
-
 int tomtom_enable_qfuse_sensing(struct snd_soc_codec *codec)
 {
 	snd_soc_write(codec, TOMTOM_A_QFUSE_CTL, 0x03);
@@ -7773,6 +7826,42 @@ int tomtom_enable_qfuse_sensing(struct snd_soc_codec *codec)
 	return 0;
 }
 EXPORT_SYMBOL(tomtom_enable_qfuse_sensing);
+#ifdef CONFIG_INPUT_MAX14688
+/*                                                         */
+void tomtom_dec5_vol_mute(void)
+{
+	u16 tx_vol_ctl_reg;
+	s8 decimator = 5; /* DEC5 */
+
+	tx_vol_ctl_reg = TOMTOM_A_CDC_TX1_VOL_CTL_CFG + 8 * (decimator - 1);
+	pr_info("%s: tx_vol_ctl_reg(%#x):0x01\n", __func__, tx_vol_ctl_reg);
+	snd_soc_update_bits(tomtom_codec_priv, tx_vol_ctl_reg, 0x01, 0x01);
+}
+/*                                                                    */
+void tomtom_set_auto_pull_down(bool enable)
+{
+	u16 auto_pd_l_ctl_reg, auto_pd_r_ctl_reg;
+
+	if(tomtom_codec_priv == NULL){
+		pr_debug("%s: codec not initialized yet, return.\n", __func__);
+		aux_pull_down = true;
+		return;
+	}
+	auto_pd_l_ctl_reg = TOMTOM_A_RX_HPH_L_TEST; // 0x1af
+	auto_pd_r_ctl_reg = TOMTOM_A_RX_HPH_R_TEST; // 0x1b5
+
+	pr_debug("%s: HP L/R PA auto pull down for aux noise enable(%d)\n", __func__, enable);
+	if(enable){
+		snd_soc_update_bits(tomtom_codec_priv, auto_pd_l_ctl_reg, 0x08, 0x08);
+		snd_soc_update_bits(tomtom_codec_priv, auto_pd_r_ctl_reg, 0x08, 0x08);
+	}else{
+		snd_soc_update_bits(tomtom_codec_priv, auto_pd_l_ctl_reg, 0x08, 0x00);
+		snd_soc_update_bits(tomtom_codec_priv, auto_pd_r_ctl_reg, 0x08, 0x00);
+	}
+}
+EXPORT_SYMBOL(tomtom_dec5_vol_mute);
+EXPORT_SYMBOL(tomtom_set_auto_pull_down);
+#endif
 
 static int tomtom_codec_probe(struct snd_soc_codec *codec)
 {
@@ -7785,6 +7874,11 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 	int i, rco_clk_rate;
 	void *ptr = NULL;
 	struct wcd9xxx_core_resource *core_res;
+
+#ifdef CONFIG_INPUT_MAX14688
+	/*                                                         */
+	tomtom_codec_priv = codec;
+#endif
 
 	codec->control_data = dev_get_drvdata(codec->dev->parent);
 	control = codec->control_data;
@@ -7829,6 +7923,9 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 
 	rco_clk_rate = TOMTOM_MCLK_CLK_9P6MHZ;
 
+
+#ifdef CONFIG_ENABLE_MBHC
+
 	tomtom->fw_data = kzalloc(sizeof(*(tomtom->fw_data)), GFP_KERNEL);
 	if (!tomtom->fw_data) {
 		dev_err(codec->dev, "Failed to allocate fw_data\n");
@@ -7852,6 +7949,7 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 		pr_err("%s: mbhc init failed %d\n", __func__, ret);
 		goto err_hwdep;
 	}
+#endif
 
 	tomtom->codec = codec;
 	for (i = 0; i < COMPANDER_MAX; i++) {
@@ -7976,8 +8074,10 @@ static int tomtom_codec_remove(struct snd_soc_codec *codec)
 
 	tomtom_cleanup_irqs(tomtom);
 
+#ifdef CONFIG_ENABLE_MBHC
 	/* cleanup MBHC */
 	wcd9xxx_mbhc_deinit(&tomtom->mbhc);
+#endif
 	/* cleanup resmgr */
 	wcd9xxx_resmgr_deinit(&tomtom->resmgr);
 

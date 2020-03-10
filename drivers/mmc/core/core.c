@@ -237,7 +237,9 @@ void mmc_request_done(struct mmc_host *host, struct mmc_request *mrq)
 	} else {
 		mmc_should_fail_request(host, mrq);
 
+#ifndef CONFIG_MACH_LGE
 		led_trigger_event(host->led, LED_OFF);
+#endif
 
 		pr_debug("%s: req done (CMD%u): %d: %08x %08x %08x %08x\n",
 			mmc_hostname(host), cmd->opcode, err,
@@ -350,7 +352,9 @@ mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 #endif
 	}
 	mmc_host_clk_hold(host);
+#ifndef CONFIG_MACH_LGE
 	led_trigger_event(host->led, LED_FULL);
+#endif
 
 	if (host->card && host->clk_scaling.enable) {
 		/*
@@ -1132,6 +1136,14 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 	} while (!err);
 
 out:
+#ifdef CONFIG_MACH_LGE
+	/*           
+                  
+  */
+	if (err)
+		pr_err("%s: mmc_interrupt_hpi() failed. err: (%d)\n",
+				mmc_hostname(card->host), err);
+#endif
 	mmc_release_host(card->host);
 	return err;
 }
@@ -1341,7 +1353,17 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 			 */
 			limit_us = 3000000;
 		else
+#ifdef CONFIG_MACH_LGE
+			/*           
+                                              
+                                         
+                                     
+                                        
+    */
+			limit_us = 300000;
+#else
 			limit_us = 100000;
+#endif
 
 		/*
 		 * SDHC cards always use these fixed values.
@@ -2085,7 +2107,14 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay should be sufficient to allow the power supply
 	 * to reach the minimum voltage.
 	 */
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                               
+  */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	host->ios.clock = host->f_init;
 
@@ -2096,7 +2125,14 @@ void mmc_power_up(struct mmc_host *host)
 	 * This delay must be at least 74 clock sizes, or 1 ms, or the
 	 * time required to reach a stable voltage.
 	 */
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                               
+  */
+	mmc_delay(20);
+#else
 	mmc_delay(10);
+#endif
 
 	/* Set signal voltage to 3.3V */
 	__mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_330);
@@ -2106,8 +2142,17 @@ void mmc_power_up(struct mmc_host *host)
 
 void mmc_power_off(struct mmc_host *host)
 {
-	if (host->ios.power_mode == MMC_POWER_OFF)
+#ifdef CONFIG_MACH_LGE
+	/*           
+                                           
+  */
+	if (host->ios.power_mode == MMC_POWER_OFF) {
+		printk(KERN_INFO "[LGE][MMC][%-18s( )] host->index:%d, already"
+				" power-off, skip below\n",
+				__func__, host->index);
 		return;
+	}
+#endif
 
 	mmc_host_clk_hold(host);
 
@@ -2260,6 +2305,10 @@ void mmc_detach_bus(struct mmc_host *host)
 	mmc_bus_put(host);
 }
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+extern char clock_flag;
+char voltage_flag = 0;
+#endif
 /**
  *	mmc_detect_change - process change of state on a MMC socket
  *	@host: host which changed state.
@@ -2279,7 +2328,14 @@ void mmc_detect_change(struct mmc_host *host, unsigned long delay)
 	spin_unlock_irqrestore(&host->lock, flags);
 #endif
 	host->detect_change = 1;
-
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+	if(host->index == 1) {
+		if(host->card) {
+			clock_flag = 0;
+			voltage_flag = 0;
+		}
+	}
+#endif
 	mmc_schedule_delayed_work(&host->detect, delay);
 }
 
@@ -2801,9 +2857,18 @@ int mmc_can_reset(struct mmc_card *card)
 
 	if (mmc_card_mmc(card) && (card->host->caps & MMC_CAP_HW_RESET)) {
 		rst_n_function = card->ext_csd.rst_n_function;
+#ifdef CONFIG_MACH_LGE
+		if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) !=
+				EXT_CSD_RST_N_ENABLED) {
+			printk("%s: mmc, MMC_CAP_HW_RESET, rst_n_function=0x"
+					"%02x\n", __func__, rst_n_function);
+			return 0;
+		}
+#else
 		if ((rst_n_function & EXT_CSD_RST_N_EN_MASK) !=
 		    EXT_CSD_RST_N_ENABLED)
 			return 0;
+#endif
 	}
 	return 1;
 }
@@ -3309,6 +3374,11 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 		pr_debug("%s: card remove detected\n", mmc_hostname(host));
 	}
 
+#ifdef CONFIG_MACH_LGE
+	printk(KERN_INFO "[LGE][MMC][%-18s( )] end, mmc%d, return %d\n",
+			__func__, host->index, ret);
+#endif
+
 	return ret;
 }
 
@@ -3353,6 +3423,14 @@ void mmc_rescan(struct work_struct *work)
 	struct mmc_host *host =
 		container_of(work, struct mmc_host, detect.work);
 	bool extend_wakelock = false;
+
+#ifdef CONFIG_MACH_LGE
+	/*           
+                
+  */
+	printk(KERN_INFO "[LGE][MMC][%-18s( ) START!] %d\n", __func__,
+			host->index);
+#endif
 
 	if (host->rescan_disable)
 		return;

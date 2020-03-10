@@ -48,6 +48,7 @@ enum esoc_notify {
 	ESOC_DEBUG_FAIL,
 	ESOC_PRIMARY_CRASH,
 	ESOC_PRIMARY_REBOOT,
+	ESOC_RAMDUMP_DONE,
 };
 
 enum esoc_req {

@@ -1008,7 +1008,12 @@ static int qpnp_lpg_configure_lut_state(struct qpnp_pwm_chip *chip,
 					lpg_config->lut_config.ramp_index);
 			value2 = QPNP_DISABLE_LPG_MODE;
 		}
+#ifdef CONFIG_LGE_QPNP_LEDS
+/* Set R-G-B LEDs concurrently */
+		mask1 = 0xff;
+#else
 		mask1 = value1;
+#endif
 		addr1 = lpg_config->lut_base_addr +
 			SPMI_LPG_REV1_RAMP_CONTROL_OFFSET;
 		break;

@@ -23,7 +23,7 @@
 #include <linux/debugfs.h>
 
 #define FLASH_NAME "camera-led-flash"
-/*#define CONFIG_MSMB_CAMERA_DEBUG*/
+#define CONFIG_MSMB_CAMERA_DEBUG
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -81,12 +81,23 @@ int32_t msm_led_i2c_trigger_config(struct msm_led_flash_ctrl_t *fctrl,
 			rc = fctrl->func_tbl->flash_led_off(fctrl);
 		break;
 
+	case MSM_CAMERA_LED_TORCH:	/*                                                 */
 	case MSM_CAMERA_LED_LOW:
+/*                                            */
+		if (fctrl->func_tbl->flash_led_low_config)
+			rc = fctrl->func_tbl->flash_led_low_config(fctrl, data);
+/*                                            */
+
 		if (fctrl->func_tbl->flash_led_low)
 			rc = fctrl->func_tbl->flash_led_low(fctrl);
 		break;
 
 	case MSM_CAMERA_LED_HIGH:
+/*                                            */
+		if (fctrl->func_tbl->flash_led_high_config)
+			rc = fctrl->func_tbl->flash_led_high_config(fctrl, data);
+/*                                            */
+
 		if (fctrl->func_tbl->flash_led_high)
 			rc = fctrl->func_tbl->flash_led_high(fctrl);
 		break;

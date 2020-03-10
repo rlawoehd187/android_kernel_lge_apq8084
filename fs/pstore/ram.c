@@ -35,6 +35,14 @@
 #include <linux/compiler.h>
 #include <linux/pstore_ram.h>
 
+#ifdef CONFIG_OF
+#include <linux/of.h>
+#endif
+
+#ifdef CONFIG_LGE_HANDLE_PANIC
+#include <mach/lge_handle_panic.h>
+#endif
+
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
 
@@ -383,14 +391,55 @@ void notrace ramoops_console_write_buf(const char *buf, size_t size)
 	persistent_ram_write(cxt->cprz, buf, size);
 }
 
+#ifdef CONFIG_OF
+static int ramoops_parse_dt(struct device *dev, struct device_node *node)
+{
+	struct ramoops_platform_data *pdata;
+
+	if (!node) {
+		dev_err(dev, "no platform data\n");
+		return -EINVAL;
+	}
+
+	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata)
+		return -ENOMEM;
+
+	of_property_read_u32(node, "mem-size", (u32 *)&pdata->mem_size);
+	of_property_read_u32(node, "mem-address", (u32 *)&pdata->mem_address);
+	of_property_read_u32(node, "record-size", (u32 *)&pdata->record_size);
+	of_property_read_u32(node, "console-size", (u32 *)&pdata->console_size);
+	of_property_read_u32(node, "ftrace-size", (u32 *)&pdata->ftrace_size);
+	of_property_read_u32(node, "dump-oops", (u32 *)&pdata->dump_oops);
+
+	dev->platform_data = pdata;
+
+	return 0;
+}
+#else
+static int ramoops_parse_dt(struct device *dev, struct device_node *node)
+{
+	return -EINVAL;
+}
+#endif
+
 static int ramoops_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct ramoops_platform_data *pdata = pdev->dev.platform_data;
 	struct ramoops_context *cxt = &oops_cxt;
+	struct device_node *node = pdev->dev.of_node;
 	size_t dump_mem_sz;
 	phys_addr_t paddr;
 	int err = -EINVAL;
+
+	if (!pdata) {
+		err = ramoops_parse_dt(&pdev->dev, node);
+		if (err < 0)
+			return err;
+
+		pdata = pdev->dev.platform_data;
+	}
 
 	/* Only a single ramoops area allowed at a time, so fail extra
 	 * probes.
@@ -485,6 +534,11 @@ static int ramoops_probe(struct platform_device *pdev)
 		cxt->size, (unsigned long long)cxt->phys_addr,
 		cxt->ecc_info.ecc_size, cxt->ecc_info.block_size);
 
+#ifdef CONFIG_LGE_HANDLE_PANIC
+	/* write ramoops addr to imem */
+	lge_set_ram_console_addr(cxt->phys_addr, cxt->size);
+#endif
+
 	return 0;
 
 fail_buf:
@@ -501,6 +555,15 @@ fail_init_cprz:
 fail_out:
 	return err;
 }
+
+#ifdef CONFIG_OF
+static struct of_device_id ramoops_of_match[] = {
+	{.compatible = "ramoops", },
+	{ },
+};
+
+EXPORT_COMPAT("ramoops");
+#endif
 
 static int __exit ramoops_remove(struct platform_device *pdev)
 {
@@ -529,6 +592,9 @@ static struct platform_driver ramoops_driver = {
 	.driver		= {
 		.name	= "ramoops",
 		.owner	= THIS_MODULE,
+#ifdef CONFIG_OF
+		.of_match_table = of_match_ptr(ramoops_of_match),
+#endif
 	},
 };
 

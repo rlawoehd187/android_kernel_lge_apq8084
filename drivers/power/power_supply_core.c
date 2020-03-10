@@ -26,6 +26,24 @@ EXPORT_SYMBOL_GPL(power_supply_class);
 
 static struct device_type power_supply_dev_type;
 
+#ifdef CONFIG_LGE_PM
+int power_supply_set_floated_charger(struct power_supply *psy,
+				int is_float)
+{
+	const union power_supply_propval ret = {is_float,};
+
+	if (psy->set_event_property)
+		return psy->set_event_property(psy,
+					POWER_SUPPLY_PROP_FLOATED_CHARGER,
+					&ret);
+
+	return -ENXIO;
+}
+EXPORT_SYMBOL_GPL(power_supply_set_floated_charger);
+#endif
+
+#define CONFIG_LGE_PM_NO_POWER_SUPPLY_DT
+#ifndef CONFIG_LGE_PM_NO_POWER_SUPPLY_DT
 static bool __power_supply_is_supplied_by(struct power_supply *supplier,
 					 struct power_supply *supply)
 {
@@ -51,6 +69,7 @@ static bool __power_supply_is_supplied_by(struct power_supply *supplier,
 
 	return false;
 }
+#endif
 
 /**
  * power_supply_set_current_limit - set current limit
@@ -198,8 +217,14 @@ static int __power_supply_changed_work(struct device *dev, void *data)
 {
 	struct power_supply *psy = (struct power_supply *)data;
 	struct power_supply *pst = dev_get_drvdata(dev);
+#ifdef CONFIG_LGE_PM_NO_POWER_SUPPLY_DT
+	int i;
 
+	for (i=0; i < psy->num_supplicants; i++)
+		if (!strcmp(psy->supplied_to[i], pst->name)) {
+#else
 	if (__power_supply_is_supplied_by(psy, pst)) {
+#endif
 		if (pst->external_power_changed)
 			pst->external_power_changed(pst);
 	}
@@ -385,8 +410,14 @@ static int __power_supply_am_i_supplied(struct device *dev, void *data)
 	union power_supply_propval ret = {0,};
 	struct power_supply *psy = (struct power_supply *)data;
 	struct power_supply *epsy = dev_get_drvdata(dev);
+#ifdef CONFIG_LGE_PM_NO_POWER_SUPPLY_DT
+	int i;
 
+	for (i=0; i< epsy->num_supplicants; i++)
+		if (!strcmp(epsy->supplied_to[i], psy->name))
+#else
 	if (__power_supply_is_supplied_by(epsy, psy))
+#endif
 		if (!epsy->get_property(epsy, POWER_SUPPLY_PROP_ONLINE, &ret)) {
 			if (ret.intval)
 				return ret.intval;

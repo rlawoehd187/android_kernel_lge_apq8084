@@ -17,53 +17,48 @@ DEFINE_MSM_MUTEX(imx135_mut);
 static struct msm_sensor_ctrl_t imx135_s_ctrl;
 
 static struct msm_sensor_power_setting imx135_power_setting[] = {
+/*                                        */
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_RESET,
+		.config_val = GPIO_OUT_LOW,
+		.delay = 1,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_OIS_RESET,
+		.config_val = GPIO_OUT_LOW,
+		.delay = 1,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_VIO,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 1,
+	},
 	{
 		.seq_type = SENSOR_VREG,
 		.seq_val = CAM_VDIG,
 		.config_val = 0,
-		.delay = 0,
-	},
-	{
-		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_VANA,
-		.config_val = 0,
-		.delay = 0,
-	},
-	{
-		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_VIO,
-		.config_val = 0,
-		.delay = 0,
-	},
-	{
-		.seq_type = SENSOR_VREG,
-		.seq_val = CAM_VAF,
-		.config_val = 0,
-		.delay = 0,
-	},
-	{
-		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_RESET,
-		.config_val = GPIO_OUT_LOW,
 		.delay = 1,
 	},
 	{
 		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_RESET,
+		.seq_val = SENSOR_GPIO_VANA,
 		.config_val = GPIO_OUT_HIGH,
-		.delay = 30,
+		.delay = 2,
 	},
 	{
 		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_STANDBY,
-		.config_val = GPIO_OUT_LOW,
+		.seq_val = SENSOR_GPIO_VAF,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 3,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_OIS_LDO_EN,
+		.config_val = GPIO_OUT_HIGH,
 		.delay = 1,
-	},
-	{
-		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_STANDBY,
-		.config_val = GPIO_OUT_HIGH,
-		.delay = 30,
 	},
 	{
 		.seq_type = SENSOR_CLK,
@@ -72,11 +67,24 @@ static struct msm_sensor_power_setting imx135_power_setting[] = {
 		.delay = 1,
 	},
 	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_RESET,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 1,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_OIS_RESET,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 1,
+	},
+	{
 		.seq_type = SENSOR_I2C_MUX,
 		.seq_val = 0,
 		.config_val = 0,
-		.delay = 0,
+		.delay = 1,
 	},
+/*                                        */
 };
 
 static struct v4l2_subdev_info imx135_subdev_info[] = {
@@ -130,6 +138,7 @@ static int32_t imx135_platform_probe(struct platform_device *pdev)
 {
 	int32_t rc = 0;
 	const struct of_device_id *match;
+	pr_err("%s: E\n", __func__);
 	match = of_match_device(imx135_dt_match, &pdev->dev);
 	if (match)
 		rc = msm_sensor_platform_probe(pdev, match->data);
@@ -143,7 +152,7 @@ static int32_t imx135_platform_probe(struct platform_device *pdev)
 static int __init imx135_init_module(void)
 {
 	int32_t rc = 0;
-	pr_info("%s:%d\n", __func__, __LINE__);
+	pr_err("%s:%d\n", __func__, __LINE__);
 	rc = platform_driver_probe(&imx135_platform_driver,
 		imx135_platform_probe);
 	if (!rc)

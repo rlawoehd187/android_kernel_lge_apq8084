@@ -1356,6 +1356,10 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 
 	port_id = q6audio_convert_virtual_to_portid(port_id);
 
+	pr_debug("%s: port 0x%x path:%d rate:%d mode:%d perf_mode:%d topo_id %d\n",
+		 __func__,
+		 port_id, path, rate, channel_mode, perf_mode, topology);
+
 	ret = q6audio_validate_port(port_id);
 	if (ret < 0) {
 		pr_err("%s: port idi[0x%x] is invalid ret %d\n",
@@ -1427,6 +1431,9 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 			if (perf_mode == ULTRA_LOW_LATENCY_PCM_MODE) {
 				open.topology_id = NULL_COPP_TOPOLOGY;
 				rate = ULL_SUPPORTED_SAMPLE_RATE;
+#ifdef CONFIG_HIFI_SOUND
+				bits_per_sample = 16;
+#endif
 			} else if (perf_mode == LOW_LATENCY_PCM_MODE) {
 				if ((open.topology_id ==
 					DOLBY_ADM_COPP_TOPOLOGY_ID) ||

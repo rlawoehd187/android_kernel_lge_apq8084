@@ -2942,6 +2942,11 @@ static struct sdhci_ops sdhci_msm_ops = {
 	.enable_controller_clock = sdhci_msm_enable_controller_clock,
 };
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+    struct sdhci_msm_host *control_msmhost_mmc0 = NULL;
+    struct sdhci_msm_host *control_msmhost_mmc1 = NULL;
+#endif
+
 static int sdhci_msm_cfg_mpm_pin_wakeup(struct sdhci_host *host, unsigned mode)
 {
 	int ret = 0;
@@ -3270,6 +3275,14 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	msm_host->mmc->caps2 |= MMC_CAP2_ASYNC_SDIO_IRQ_4BIT_MODE;
 	msm_host->mmc->pm_caps |= MMC_PM_KEEP_POWER | MMC_PM_WAKE_SDIO_IRQ;
 	msm_host->mmc->caps2 |= MMC_CAP2_CORE_PM;
+#if defined(CONFIG_LGE_MMC_BKOPS_ENABLE) && defined(CONFIG_MMC_SDHCI_MSM)
+	/*           
+                                                               
+                                                  
+                                                
+  */
+	msm_host->mmc->caps2 |= MMC_CAP2_INIT_BKOPS;
+#endif
 
 	if (msm_host->pdata->nonremovable)
 		msm_host->mmc->caps |= MMC_CAP_NONREMOVABLE;
@@ -3278,6 +3291,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 
 	init_completion(&msm_host->pwr_irq_completion);
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+    if(msm_host->mmc->index == 0)
+        control_msmhost_mmc0 = msm_host ;
+
+    if(msm_host->mmc->index == 1)
+        control_msmhost_mmc1 = msm_host ;
+#endif
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
 		ret = mmc_gpio_request_cd(msm_host->mmc,
 				msm_host->pdata->status_gpio);
@@ -3374,6 +3394,14 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			msm_host->pdata->mpm_sdiowakeup_int = -1;
 		}
 	}
+
+	// enable async suspend
+	/*This is aimed to reduce the suspend time of sdhci-msm device.
+	The suspend of this device would be carried out in a separate
+	thread and other devices may suspend concurrently. This is
+	required since the mmc sub-system contributes to the major
+	chunk of suspend latency.*/
+	device_enable_async_suspend(&pdev->dev);
 
 	/* Successful initialization */
 	goto out;

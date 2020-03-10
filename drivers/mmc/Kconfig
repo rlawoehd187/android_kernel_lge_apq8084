@@ -27,6 +27,13 @@ config MMC_PERF_PROFILING
 	  If you say Y here, support will be added for collecting
 	  performance numbers at the MMC Queue and Host layers.
 
+config LGE_MMC_BKOPS_ENABLE
+	bool "enable BKOPS for eMMC"
+	depends on MMC != n
+	depends on MACH_LGE
+	help
+	  If you want to use BKOPS for eMMC, you have to set Y in
+	  kernel/arch/arm/configs/XXXX_defconfig file.
 if MMC
 
 source "drivers/mmc/core/Kconfig"

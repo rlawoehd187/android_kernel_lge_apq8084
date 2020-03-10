@@ -301,6 +301,8 @@ config ARCH_MSMSAMARIUM
 	select MSM_IRQ
 endmenu
 
+source "arch/arm/mach-msm/lge/Kconfig"
+
 config MSM_KRAIT_TBB_ABORT_HANDLER
 	bool "Krait TBB/TBH data abort handler"
 	depends on ARCH_MSM_KRAIT

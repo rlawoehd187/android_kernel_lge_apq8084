@@ -51,6 +51,12 @@ static const unsigned int tacc_mant[] = {
 	35,	40,	45,	50,	55,	60,	70,	80,
 };
 
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+unsigned int clock_max;
+char clock_flag=0;
+unsigned int clock_show = 0;
+#endif
+
 #define UNSTUFF_BITS(resp,start,size)					\
 	({								\
 		const int __size = size;				\
@@ -256,6 +262,31 @@ static int mmc_read_ssr(struct mmc_card *card)
 		es = UNSTUFF_BITS(ssr, 408 - 384, 16);
 		et = UNSTUFF_BITS(ssr, 402 - 384, 6);
 		eo = UNSTUFF_BITS(ssr, 400 - 384, 2);
+
+		#ifdef CONFIG_MACH_LGE
+		/*           
+                                
+                                                      
+                                          
+   */
+		{
+			unsigned int speed_class_ssr = 0;
+
+			speed_class_ssr = UNSTUFF_BITS(ssr, 440 - 384, 8);
+			if(speed_class_ssr < 5)
+			{
+				printk(KERN_INFO "[LGE][MMC][%-18s( )] mmc_hostname:%s, %u ==> SPEED_CLASS %s%s%s%s%s\n", __func__, mmc_hostname(card->host), speed_class_ssr,
+				((speed_class_ssr == 4) ? "10" : ""),
+				((speed_class_ssr == 3) ? "6" : ""),
+				((speed_class_ssr == 2) ? "4" : ""),
+				((speed_class_ssr == 1) ? "2" : ""),
+				((speed_class_ssr == 0) ? "0" : ""));
+			}
+			else
+				printk(KERN_INFO "[LGE][MMC][%-18s( )] mmc_hostname:%s, Unknown SPEED_CLASS\n", __func__, mmc_hostname(card->host));
+		}
+		#endif
+
 		if (es && et) {
 			card->ssr.erase_timeout = (et * 1000) / es;
 			card->ssr.erase_offset = eo * 1000;
@@ -521,7 +552,20 @@ static int sd_set_bus_speed_mode(struct mmc_card *card, u8 *status)
 			mmc_hostname(card->host));
 	else {
 		mmc_set_timing(card->host, timing);
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+    if(clock_flag)
+    {
+        mmc_set_clock(card->host, clock_max);
+        clock_show = clock_max;
+    }
+    else
+    {
+        mmc_set_clock(card->host, card->sw_caps.uhs_max_dtr);
+        clock_show = card->sw_caps.uhs_max_dtr;
+    }
+#else
 		mmc_set_clock(card->host, card->sw_caps.uhs_max_dtr);
+#endif
 	}
 
 	return 0;
@@ -1012,6 +1056,17 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
+    #ifdef CONFIG_MACH_LGE
+    /*           
+                                                          
+                                   
+    */
+    if (!mmc_gpio_get_status(host)) {
+        printk(KERN_INFO "[LGE][MMC][%-18s( )] sd-no-exist. skip next\n", __func__);
+        err = -ENOMEDIUM;
+        return err;
+    }
+#endif
 	err = mmc_sd_get_cid(host, ocr, cid, &rocr);
 	if (err)
 		return err;
@@ -1084,7 +1139,20 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 		/*
 		 * Set bus speed.
 		 */
+#ifdef CONFIG_LGE_ENABLE_MMC_STRENGTH_CONTROL
+    if(clock_flag)
+    {
+        mmc_set_clock(host, clock_max);
+        clock_show = clock_max;
+    }
+    else
+    {
+        mmc_set_clock(host, mmc_sd_get_max_clock(card));
+        clock_show = mmc_sd_get_max_clock(card);
+    }
+#else
 		mmc_set_clock(host, mmc_sd_get_max_clock(card));
+#endif
 
 		/*
 		 * Switch to wider bus (if supported).
@@ -1237,6 +1305,17 @@ static int mmc_sd_resume(struct mmc_host *host)
 	while (retries) {
 		err = mmc_sd_init_card(host, host->ocr, host->card);
 
+#ifdef CONFIG_MACH_LGE
+        /*           
+                                   
+                                       
+        */
+        if (err == -ENOMEDIUM) {
+            printk(KERN_INFO "[LGE][MMC][%-18s( )] error:ENOMEDIUM\n", __func__);
+            break;
+        }
+#endif
+
 		if (err) {
 			printk(KERN_ERR "%s: Re-init card rc = %d (retries = %d)\n",
 			       mmc_hostname(host), err, retries);
@@ -1382,6 +1461,19 @@ int mmc_attach_sd(struct mmc_host *host)
 	retries = 5;
 	while (retries) {
 		err = mmc_sd_init_card(host, host->ocr, NULL);
+
+#ifdef CONFIG_MACH_LGE
+        /*           
+                                   
+                                       
+        */
+        if (err == -ENOMEDIUM) {
+            printk(KERN_INFO "[LGE][MMC][%-18s( )] error:ENOMEDIUM\n", __func__);
+            retries=0;
+            break;
+        }
+#endif
+
 		if (err) {
 			retries--;
 			mmc_power_off(host);

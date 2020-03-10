@@ -20,6 +20,15 @@
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
 
+#if defined(CONFIG_LG_OIS)
+#include "msm_ois.h"
+#endif
+/*                                                                 */
+#if defined(CONFIG_LG_PROXY)
+#include "msm_proxy.h"
+#endif
+/*                                                                 */
+
 /*#define CONFIG_MSMB_CAMERA_DEBUG*/
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
@@ -27,6 +36,9 @@
 #else
 #define CDBG(fmt, args...) do { } while (0)
 #endif
+
+/* Apply count log message related laser */
+int log_count = 0;
 
 static int32_t msm_camera_get_power_settimgs_from_sensor_lib(
 	struct msm_camera_power_ctrl_t *power_info,
@@ -173,6 +185,15 @@ static int32_t msm_sensor_get_dt_data(struct device_node *of_node,
 	}
 	CDBG("%s qcom,sensor-mode %d\n", __func__,
 		sensordata->sensor_info->modes_supported);
+
+	/*                                                           */
+	if (of_property_read_bool(of_node, "qcom,gpio-ois-ldo") == true) {
+		sensordata->sensor_info->ois_supported = true;
+	}
+	else {
+		sensordata->sensor_info->ois_supported = false;
+	}
+	/*                                                           */
 
 	rc = msm_sensor_get_dt_csi_data(of_node, &sensordata->csi_lane_params);
 	if (rc < 0) {
@@ -411,6 +432,7 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, power_info, sensor_i2c_client);
 		return -EINVAL;
 	}
+	pr_err("%s for %s\n", __func__, s_ctrl->sensordata->sensor_name);
 	return msm_camera_power_down(power_info, sensor_device_type,
 		sensor_i2c_client);
 }
@@ -458,7 +480,7 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			break;
 		}
 	}
-
+	pr_err("%s for %s\n", __func__, s_ctrl->sensordata->sensor_name);
 	return rc;
 }
 
@@ -591,7 +613,10 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		CDBG("%s:%d mount angle valid %d value %d\n", __func__,
 			__LINE__, cdata->cfg.sensor_info.is_mount_angle_valid,
 			cdata->cfg.sensor_info.sensor_mount_angle);
-
+/*                                                           */
+		cdata->cfg.sensor_info.ois_supported=
+			s_ctrl->sensordata->sensor_info->ois_supported;
+/*                                                           */
 		break;
 	case CFG_GET_SENSOR_INIT_PARAMS:
 		cdata->cfg.sensor_init_params.modes_supported =
@@ -600,6 +625,10 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 			s_ctrl->sensordata->sensor_info->position;
 		cdata->cfg.sensor_init_params.sensor_mount_angle =
 			s_ctrl->sensordata->sensor_info->sensor_mount_angle;
+/*                                                           */
+		cdata->cfg.sensor_init_params.ois_supported =
+			s_ctrl->sensordata->sensor_info->ois_supported;
+/*                                                           */
 		CDBG("%s:%d init params mode %d pos %d mount %d\n", __func__,
 			__LINE__,
 			cdata->cfg.sensor_init_params.modes_supported,
@@ -1035,6 +1064,112 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 		break;
 	}
+/*                                                       */
+#if defined(CONFIG_LG_OIS)
+	case CFG_OIS_ON:{
+		enum ois_ver_t ver;
+		if (copy_from_user(&ver, (void *)cdata->cfg.setting,sizeof(enum ois_ver_t)))
+		{
+			ver = OIS_VER_RELEASE;
+		}
+		CDBG("%s: ois_on! %d \n", __func__, ver);
+		rc = msm_init_ois(ver);
+		break;
+	}
+
+	case CFG_OIS_OFF:{
+		CDBG("%s: ois_off!\n", __func__);
+		rc = msm_ois_off();
+		break;
+	}
+	case CFG_GET_OIS_INFO:{
+		struct msm_sensor_ois_info_t ois_stat;
+		CDBG("%s: CFG_GET_OIS_INFO!\n", __func__);
+		rc = msm_ois_info(&ois_stat);
+		memcpy(&cdata->cfg.ois_info,&ois_stat,sizeof(cdata->cfg.ois_info));
+		break;
+	}
+	case CFG_SET_OIS_MODE:{
+		enum ois_mode_t mode;
+		if (copy_from_user(&mode, (void *)cdata->cfg.setting,sizeof(enum ois_mode_t)))
+		{
+			mode = OIS_MODE_PREVIEW_CAPTURE;
+		}
+		CDBG("%s:CFG_SET_OIS_MODE  %d\n", __func__, mode);
+		rc = msm_ois_mode(mode);
+		break;
+	}
+	case CFG_OIS_MOVE_LENS:{
+		int16_t offset[2];
+		if (copy_from_user(&offset[0], (void *)cdata->cfg.setting,sizeof(int16_t)*2))
+		{
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -EFAULT;
+			break;
+		}
+		CDBG("%s:CFG_OIS_MOVE_LENS %x, %x\n", __func__, offset[0], offset[1]);
+		rc = msm_ois_move_lens(offset[0], offset[1]);
+		break;
+	}
+#endif
+/*                                                        */
+/*                                                                 */
+#if defined(CONFIG_LG_PROXY)
+	case CFG_PROXY_ON:{
+		rc = msm_init_proxy();
+		CDBG("%s: Proxy is on! error_code = %ld \n", __func__, rc);
+		break;
+	}
+
+	case CFG_GET_PROXY:{
+		struct msm_sensor_proxy_info_t proxy_stat;
+		uint16_t read_proxy_data = 0;
+//		CDBG("%s: CFG_GET_PROXY_INFO!\n", __func__);
+		read_proxy_data = msm_get_proxy(&proxy_stat);
+		cdata->cfg.proxy_data  = read_proxy_data;
+		memcpy(&cdata->cfg.proxy_info,&proxy_stat,sizeof(cdata->cfg.proxy_info));
+		/* Apply count log message related laser */
+		log_count++;
+		if (log_count == 10) {
+			CDBG("%s: Get Proxy data! Range is = %d \n", __func__, read_proxy_data);
+			log_count = 0;
+		}
+		}
+		break;
+	case	CFG_PROXY_THREAD_ON:{
+		uint16_t ret = 0;
+		CDBG("%s: CFG_PROXY_THREAD_ON \n", __func__);
+		ret = msm_proxy_thread_start();
+		}
+		break;
+	case	CFG_PROXY_THREAD_OFF:{
+		uint16_t ret = 0;
+		CDBG("%s: CFG_PROXY_THREAD_OFF \n", __func__);
+		ret = msm_proxy_thread_end();
+		}
+		break;
+	case	CFG_PROXY_THREAD_PAUSE:{
+		uint16_t ret = 0;
+		CDBG("%s: CFG_PROXY_THREAD_PAUSE \n", __func__);
+		ret = msm_proxy_thread_pause();
+		}
+		break;
+	case	CFG_PROXY_THREAD_RESTART:{
+		uint16_t ret = 0;
+		CDBG("%s: CFG_PROXY_THREAD_RESTART \n", __func__);
+		ret = msm_proxy_thread_restart();
+		}
+		break;
+	case	CFG_PROXY_CAL:{
+		uint16_t ret = 0;
+		CDBG("%s: CFG_PROXY_CAL \n", __func__);
+		ret = msm_proxy_cal();
+		}
+		break;
+
+#endif
+/*                                                                 */
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1146,6 +1281,8 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 			return rc;
 		}
 	}
+	pr_err("%s sensor name %s\n", __func__,
+		s_ctrl->sensordata->sensor_name);
 	s_ctrl->sensordata->power_info.dev = &pdev->dev;
 	s_ctrl->sensor_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 	s_ctrl->sensor_i2c_client->cci_client = kzalloc(sizeof(
@@ -1189,7 +1326,7 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 		return rc;
 	}
 
-	CDBG("%s %s probe succeeded\n", __func__,
+	pr_err("%s %s probe succeeded\n", __func__,
 		s_ctrl->sensordata->sensor_name);
 	v4l2_subdev_init(&s_ctrl->msm_sd.sd,
 		s_ctrl->sensor_v4l2_subdev_ops);

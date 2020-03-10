@@ -227,6 +227,13 @@ enum dev_state {
 	DEV_RESUMED,
 };
 
+#ifdef CONFIG_MACH_LGE
+/*           
+                                    
+ */
+extern int mmc_gpio_get_status(struct mmc_host *host);
+#endif
+
 struct mmc_host {
 	struct device		*parent;
 	struct device		class_dev;

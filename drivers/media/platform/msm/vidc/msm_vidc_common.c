@@ -4030,7 +4030,7 @@ static void msm_comm_generate_session_error(struct msm_vidc_inst *inst)
 	enum command_response cmd = SESSION_ERROR;
 	struct msm_vidc_cb_cmd_done response = {0};
 
-	dprintk(VIDC_WARN, "msm_comm_generate_session_error\n");
+       dprintk(VIDC_WARN, "msm_comm_generate_session_error\n");
 	if (!inst || !inst->core) {
 		dprintk(VIDC_ERR, "%s: invalid input parameters\n", __func__);
 		return;

@@ -105,4 +105,8 @@ extern struct kpss_core_clk krait2_clk;
 extern struct kpss_core_clk krait3_clk;
 extern struct kpss_core_clk l2_clk;
 
+void set_speed_pvs_bin(int speed, int pvs);
+void get_speed_bin(int *speed);
+void get_pvs_bin(int *pvs);
+
 #endif

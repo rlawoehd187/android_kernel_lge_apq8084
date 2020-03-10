@@ -30,6 +30,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_ALC5623 if I2C
 	select SND_SOC_ALC5632 if I2C
 	select SND_SOC_CQ0093VC if MFD_DAVINCI_VOICECODEC
+	select SND_SOC_CS35L32 if I2C
 	select SND_SOC_CS42L51 if I2C
 	select SND_SOC_CS42L52 if I2C
 	select SND_SOC_CS42L73 if I2C
@@ -123,6 +124,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_WM9705 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9712 if SND_SOC_AC97_BUS
 	select SND_SOC_WM9713 if SND_SOC_AC97_BUS
+	select SND_SOC_TPA2015D if MACH_LGE
         help
           Normally ASoC codec drivers are only built if a machine driver which
           uses them is also built since they are only usable with a machine
@@ -549,6 +551,20 @@ config SND_SOC_TPA6130A2
 
 config SND_SOC_MSM_STUB
 	tristate
+
+config SND_SOC_TPA2015D
+	tristate "external amp"
+	depends on MACH_LGE
+	default n
+	help
+	 Say Y here to enable
+
+config SND_SOC_CS35L32
+	tristate "cs35l32 amp"
+	depends on MACH_LGE
+	default n
+	help
+	 Say Y here to enable
 
 config SND_SOC_MSM_HDMI_CODEC_RX
 	bool "HDMI Audio Playback"

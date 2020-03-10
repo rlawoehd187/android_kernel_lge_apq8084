@@ -20,6 +20,9 @@
 #include "msm_camera_i2c.h"
 #include "msm_camera_dt_util.h"
 #include "msm_camera_io_util.h"
+/*                                                                                                    */
+#include <linux/wakelock.h>
+/*                                                                                                    */
 
 
 #define DEFINE_MSM_MUTEX(mutexname) \
@@ -27,6 +30,11 @@
 
 #define	MSM_ACTUATOT_MAX_VREGS (10)
 
+/*                                                                                                     */
+#define CAMERA_ENTER_MOMENT                      1
+#define CAMERA_ENTER_MOMENT_AFTER                2
+static int current_moment;
+/*                                                                                                     */
 struct msm_actuator_ctrl_t;
 
 enum msm_actuator_state_t {
@@ -102,6 +110,9 @@ struct msm_actuator_ctrl_t {
 	struct msm_actuator_vreg vreg_cfg;
 	struct park_lens_data_t park_lens;
 	uint32_t max_code_size;
+/*                                                                                                    */
+	struct wake_lock        camera_wake_lock;
+/*                                                                                                    */
 };
 
 #endif

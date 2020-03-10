@@ -28,6 +28,7 @@
 #include <soc/qcom/socinfo.h>
 #include <soc/qcom/smem.h>
 #include <soc/qcom/boot_stats.h>
+#include <soc/qcom/clock-krait.h>
 
 #define BUILD_ID_LENGTH 32
 #define SMEM_IMAGE_VERSION_BLOCKS_COUNT 32
@@ -56,6 +57,8 @@ enum {
 	HW_PLATFORM_DTV	= 14,
 	HW_PLATFORM_STP = 23,
 	HW_PLATFORM_SBC = 24,
+	HW_PLATFORM_LGPC9 = 100,
+	HW_PLATFORM_T6_KR = 101,
 	HW_PLATFORM_INVALID
 };
 
@@ -74,6 +77,8 @@ const char *hw_platform[] = {
 	[HW_PLATFORM_DTV] = "DTV",
 	[HW_PLATFORM_STP] = "STP",
 	[HW_PLATFORM_SBC] = "SBC",
+	[HW_PLATFORM_LGPC9] = "LGPC9",
+	[HW_PLATFORM_T6_KR] = "T6 KR",
 };
 
 enum {
@@ -835,6 +840,21 @@ msm_select_image(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
+static ssize_t socinfo_show_speed_bin(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int speed = 0;
+	get_speed_bin(&speed);
+	return snprintf(buf, PAGE_SIZE, "%u\n", speed);
+}
+
+static ssize_t socinfo_show_pvs_bin(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int pvs = 0;
+	get_pvs_bin(&pvs);
+	return snprintf(buf, PAGE_SIZE, "%u\n", pvs);
+}
 
 static struct device_attribute msm_soc_attr_raw_version =
 	__ATTR(raw_version, S_IRUGO, msm_get_raw_version,  NULL);
@@ -898,6 +918,12 @@ static struct device_attribute image_crm_version =
 static struct device_attribute select_image =
 	__ATTR(select_image, S_IRUGO | S_IWUSR,
 			msm_get_image_number, msm_select_image);
+
+static struct device_attribute msm_soc_attr_speed_bin =
+	__ATTR(speed_bin, S_IRUGO, socinfo_show_speed_bin, NULL);
+
+static struct device_attribute msm_soc_attr_pvs_bin =
+	__ATTR(pvs_bin, S_IRUGO, socinfo_show_pvs_bin, NULL);
 
 static void * __init setup_dummy_socinfo(void)
 {
@@ -970,6 +996,10 @@ static void __init populate_soc_sysfs_files(struct device *msm_soc_device)
 	case 1:
 		device_create_file(msm_soc_device,
 					&msm_soc_attr_build_id);
+		device_create_file(msm_soc_device,
+					&msm_soc_attr_speed_bin);
+		device_create_file(msm_soc_device,
+					&msm_soc_attr_pvs_bin);
 		break;
 	default:
 		pr_err("%s:Unknown socinfo format:%u\n", __func__,

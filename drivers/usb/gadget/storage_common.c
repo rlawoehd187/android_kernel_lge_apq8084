@@ -480,8 +480,13 @@ static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 	}
 
 	if (curlun->cdrom) {
+#ifdef CONFIG_USB_G_LGE_ANDROID_CDROM_MAC_SUPPORT
+		blksize = 512;
+		blkbits = 9;
+#else
 		blksize = 2048;
 		blkbits = 11;
+#endif
 	} else if (inode->i_bdev) {
 		blksize = bdev_logical_block_size(inode->i_bdev);
 		blkbits = blksize_bits(blksize);
@@ -493,6 +498,16 @@ static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 	num_sectors = size >> blkbits; /* File size in logic-block-size blocks */
 	min_sectors = 1;
 	if (curlun->cdrom) {
+#ifdef CONFIG_USB_G_LGE_ANDROID_CDROM_MAC_SUPPORT
+		num_sectors &= ~3;	/* Reduce to a multiple of 2048 */
+		min_sectors = 300*4;	/* Smallest track is 300 frames */
+		if (num_sectors >= 256*60*75*4) {
+			num_sectors = (256*60*75 - 1) * 4;
+			LINFO(curlun, "file too big: %s\n", filename);
+			LINFO(curlun, "using only first %d blocks\n",
+					(int) num_sectors);
+		}
+#else
 		min_sectors = 300;	/* Smallest track is 300 frames */
 		if (num_sectors >= 256*60*75) {
 			num_sectors = 256*60*75 - 1;
@@ -500,6 +515,7 @@ static int fsg_lun_open(struct fsg_lun *curlun, const char *filename)
 			LINFO(curlun, "using only first %d blocks\n",
 					(int) num_sectors);
 		}
+#endif
 	}
 	if (num_sectors < min_sectors) {
 		LINFO(curlun, "file too small: %s\n", filename);
@@ -558,33 +574,98 @@ static void store_cdrom_address(u8 *dest, int msf, u32 addr)
 	}
 }
 
+#ifdef CONFIG_USB_G_LGE_ANDROID_CDROM_MAC_SUPPORT
+/**
+ * fsg_get_toc() - Builds a TOC with required format @format.
+ * @curlun: The LUN for which the TOC has to be built
+ * @msf: Min Sec Frame format or LBA format for address
+ * @format: TOC format code
+ * @buf: the buffer into which the TOC is built
+ *
+ * Builds a Table of Content which can be used as data for READ_TOC command.
+ * The TOC simulates a single session, single track CD-ROM mode 1 disc.
+ *
+ * Returns number of bytes written to @buf, -EINVAL if format not supported.
+ */
+static int fsg_get_toc(struct fsg_lun *curlun, int msf, int format, u8 *buf)
+{
+	int i, len;
+	switch (format) {
+	case 0:
+		/* Formatted TOC */
+		len = 4 + 2*8;       /* 4 byte header + 2 descriptors */
+		memset(buf, 0, len);
+		buf[1] = len - 2;    /* TOC Length excludes length field */
+		buf[2] = 1;          /* First track number */
+		buf[3] = 1;          /* Last track number */
+		buf[5] = 0x16;       /* Data track, copying allowed */
+		buf[6] = 0x01;       /* Only track is number 1 */
+		store_cdrom_address(&buf[8], msf, 0);
+
+		buf[13] = 0x16;      /* Lead-out track is data */
+		buf[14] = 0xAA;      /* Lead-out track number */
+		store_cdrom_address(&buf[16], msf, curlun->num_sectors);
+		return len;
+		break;
+	case 2:
+		/* Raw TOC */
+		len = 4 + 3*11;      /* 4 byte header + 3 descriptors */
+		memset(buf, 0, len); /* Header + A0, A1 & A2 descriptors */
+		buf[1] = len - 2;    /* TOC data length */
+		buf[2] = 1;          /* First complete session */
+		buf[3] = 1;          /* Last complete session */
+
+		buf += 4;
+		/* fill in A0, A1 and A2 points */
+		for (i = 0; i < 3; i++) {
+			buf[0] = 1;  /* Session number */
+			buf[1] = 0x16;/* Data track, copying allowed */
+			/* 2 - Track number 0 ->  TOC */
+			buf[3] = 0xA0 + i; /* A0, A1, A2 point */
+			/* 4, 5, 6 - Min, sec, frame is zero */
+			buf[8] = 1;  /* Pmin: last track number */
+			buf += 11;   /* go to next track descriptor */
+		}
+		buf -= 11;           /* go back to A2 descriptor */
+
+		/* For A2, 7, 8, 9, 10 - zero, Pmin, Psec, Pframe of Lead out */
+		store_cdrom_address(&buf[7], msf, curlun->num_sectors);
+		return len;
+		break;
+	default:
+		/* Multi-session, PMA, ATIP, CD-TEXT not supported/required */
+		return -EINVAL;
+		break;
+	}
+}
+#endif
 
 /*-------------------------------------------------------------------------*/
 
 
 static ssize_t fsg_show_ro(struct device *dev, struct device_attribute *attr,
-			   char *buf)
+		char *buf)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
 
 	return sprintf(buf, "%d\n", fsg_lun_is_open(curlun)
-				  ? curlun->ro
-				  : curlun->initially_ro);
+			? curlun->ro
+			: curlun->initially_ro);
 }
 
 static ssize_t fsg_show_nofua(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+		char *buf)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
 
 	return sprintf(buf, "%u\n", curlun->nofua);
 }
 
 #ifdef CONFIG_USB_MSC_PROFILING
 static ssize_t fsg_show_perf(struct device *dev, struct device_attribute *attr,
-			      char *buf)
+		char *buf)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
 	unsigned long rbytes, wbytes;
 	int64_t rtime, wtime;
 
@@ -596,15 +677,15 @@ static ssize_t fsg_show_perf(struct device *dev, struct device_attribute *attr,
 	spin_unlock(&curlun->lock);
 
 	return snprintf(buf, PAGE_SIZE, "Write performance :"
-					"%lu bytes in %lld microseconds\n"
-					"Read performance :"
-					"%lu bytes in %lld microseconds\n",
-					wbytes, wtime, rbytes, rtime);
+			"%lu bytes in %lld microseconds\n"
+			"Read performance :"
+			"%lu bytes in %lld microseconds\n",
+			wbytes, wtime, rbytes, rtime);
 }
 static ssize_t fsg_store_perf(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
+		const char *buf, size_t count)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
 	int value;
 
 	sscanf(buf, "%d", &value);
@@ -618,15 +699,15 @@ static ssize_t fsg_store_perf(struct device *dev, struct device_attribute *attr,
 }
 #endif
 static ssize_t fsg_show_file(struct device *dev, struct device_attribute *attr,
-			     char *buf)
+		char *buf)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
-	char		*p;
-	ssize_t		rc;
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
+	struct rw_semaphore *filesem = dev_get_drvdata(dev);
+	char *p;
+	ssize_t rc;
 
 	down_read(filesem);
-	if (fsg_lun_is_open(curlun)) {	/* Get the complete pathname */
+	if (fsg_lun_is_open(curlun)) { /* Get the complete pathname */
 		p = d_path(&curlun->filp->f_path, buf, PAGE_SIZE - 1);
 		if (IS_ERR(p))
 			rc = PTR_ERR(p);
@@ -636,10 +717,10 @@ static ssize_t fsg_show_file(struct device *dev, struct device_attribute *attr,
 				rc = PAGE_SIZE - 2;
 
 			memmove(buf, p, rc);
-			buf[rc] = '\n';		/* Add a newline */
+			buf[rc] = '\n'; /* Add a newline */
 			buf[++rc] = 0;
 		}
-	} else {				/* No file, return 0 bytes */
+	} else {                        /* No file, return 0 bytes */
 		*buf = 0;
 		rc = 0;
 	}
@@ -649,12 +730,12 @@ static ssize_t fsg_show_file(struct device *dev, struct device_attribute *attr,
 
 
 static ssize_t fsg_store_ro(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
+		const char *buf, size_t count)
 {
-	ssize_t		rc;
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
-	unsigned	ro;
+	ssize_t rc;
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
+	struct rw_semaphore *filesem = dev_get_drvdata(dev);
+	unsigned ro;
 
 	rc = kstrtouint(buf, 2, &ro);
 	if (rc)
@@ -679,12 +760,12 @@ static ssize_t fsg_store_ro(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t fsg_store_nofua(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
+		struct device_attribute *attr,
+		const char *buf, size_t count)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-	unsigned	nofua;
-	int		ret;
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
+	unsigned nofua;
+	int ret;
 
 	ret = kstrtouint(buf, 2, &nofua);
 	if (ret)
@@ -700,11 +781,11 @@ static ssize_t fsg_store_nofua(struct device *dev,
 }
 
 static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
-			      const char *buf, size_t count)
+		const char *buf, size_t count)
 {
-	struct fsg_lun	*curlun = fsg_lun_from_dev(dev);
-	struct rw_semaphore	*filesem = dev_get_drvdata(dev);
-	int		rc = 0;
+	struct fsg_lun *curlun = fsg_lun_from_dev(dev);
+	struct rw_semaphore *filesem = dev_get_drvdata(dev);
+	int rc = 0;
 
 
 #if !defined(CONFIG_USB_G_ANDROID)
@@ -728,7 +809,7 @@ static ssize_t fsg_store_file(struct device *dev, struct device_attribute *attr,
 		rc = fsg_lun_open(curlun, buf);
 		if (rc == 0)
 			curlun->unit_attention_data =
-					SS_NOT_READY_TO_READY_TRANSITION;
+				SS_NOT_READY_TO_READY_TRANSITION;
 	} else if (fsg_lun_is_open(curlun)) {
 		fsg_lun_close(curlun);
 		curlun->unit_attention_data = SS_MEDIUM_NOT_PRESENT;

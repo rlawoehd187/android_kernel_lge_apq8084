@@ -7,6 +7,17 @@ config MSM_CAMERA_SENSOR
           data for camera support. The driver support V4L2
           subdev APIs.
 
+config LG_OIS
+	bool "Qualcomm MSM camera ois support"
+	depends on MSMB_CAMERA
+	---help---
+	Enable support for ois for msm camera.
+
+config LG_PROXY
+        bool "Qualcomm MSM camera proxy support"
+        depends on MSMB_CAMERA
+        ---help---
+        Enable support for proxy sensor for msm camera.
 config MSM_CPP
         bool "Qualcomm MSM Camera Post Processing Engine support"
         depends on MSMB_CAMERA
@@ -147,6 +158,12 @@ config IMX132
 		snapshot config = 1920 x 1080 at 30 fps,
 		Video HDR support.
 
+config IMX208
+	bool "Sensor IMX208 2.1MP MIPI (Bayer 2.1M)"
+	depends on MSMB_CAMERA
+	---help---
+	  SONY 2.1M BAYER MIPI Sensor without Autofocus
+
 config OV2720
 	bool "Sensor OV2720 (BAYER 2M)"
 	depends on MSMB_CAMERA
@@ -268,3 +285,6 @@ config MSM_GEMINI
 	depends on MSMB_CAMERA && (ARCH_MSM7X30 || ARCH_MSM8X60 || ARCH_MSM8960)
 	---help---
 	  Enables support for the Gemini JPEG encoder engine for 8x60.
+
+config LGE_DUAL_LED
+	bool "LGE dual led support"

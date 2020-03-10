@@ -4,10 +4,12 @@
 
 # Create $(fwabs) from $(CONFIG_EXTRA_FIRMWARE_DIR) -- if it doesn't have a
 # leading /, it's relative to $(srctree).
-fwdir := $(subst ",,$(CONFIG_EXTRA_FIRMWARE_DIR))
+temp = " "
+double_quotes = $(firstword $(temp))
+fwdir := $(subst $(double_quotes),,$(CONFIG_EXTRA_FIRMWARE_DIR))
 fwabs := $(addprefix $(srctree)/,$(filter-out /%,$(fwdir)))$(filter /%,$(fwdir))
 
-fw-external-y := $(subst ",,$(CONFIG_EXTRA_FIRMWARE))
+fw-external-y := $(subst $(double_quotes),,$(CONFIG_EXTRA_FIRMWARE))
 
 # There are three cases to care about:
 # 1. Building kernel with CONFIG_FIRMWARE_IN_KERNEL=y -- $(fw-shipped-y) should
@@ -26,6 +28,15 @@ fw-shipped- += acenic/tg1.bin
 else
 acenic-objs := acenic/tg1.bin acenic/tg2.bin
 endif
+ifdef CONFIG_ARCH_APQ8084
+synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/g3_kr/*.img)
+synaptics_img_file += $(wildcard $(srctree)/firmware/synaptics/g3_kr/*.txt)
+else
+synaptics_img_file := $(wildcard $(srctree)/firmware/synaptics/$(TARGET_PRODUCT)/*.img)
+synaptics_img_file += $(wildcard $(srctree)/firmware/synaptics/$(TARGET_PRODUCT)/*.txt)
+endif
+synaptics_firmware := $(subst $(srctree)/firmware/,,$(synaptics_img_file))
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4) += $(synaptics_firmware)
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
 fw-shipped-$(CONFIG_ADAPTEC_STARFIRE) += adaptec/starfire_rx.bin \
 					 adaptec/starfire_tx.bin
@@ -147,6 +158,9 @@ quiet_cmd_mkdir = MKDIR   $(patsubst $(objtree)/%,%,$@)
 quiet_cmd_ihex  = IHEX    $@
       cmd_ihex  = $(OBJCOPY) -Iihex -Obinary $< $@
 
+quiet_cmd_copy  = COPY    $@
+      cmd_copy  = cp -u $(srctree)/$@ $@
+
 quiet_cmd_ihex2fw  = IHEX2FW $@
       cmd_ihex2fw  = $(objtree)/$(obj)/ihex2fw $< $@
 
@@ -193,6 +207,11 @@ $(objtree)/$$(%) $(objtree)/$(obj)/$$(%): $(firmware-dirs)
 
 # For the $$(dir %) trick, where we need % to be expanded first.
 .SECONDEXPANSION:
+
+ifneq ($(objtree),$(srctree))
+$(patsubst %,$(obj)/%, $(fw-shipped-y)): %: %.gen.S
+	$(call cmd,copy)
+endif
 
 $(patsubst %,$(obj)/%.gen.S, $(fw-shipped-y)): %: $(wordsize_deps) \
 		| $(objtree)/$$(dir %)

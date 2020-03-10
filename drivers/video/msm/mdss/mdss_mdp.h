@@ -35,7 +35,11 @@
 #define PHASE_STEP_SHIFT	21
 #define MAX_MIXER_WIDTH		2048
 #define MAX_LINE_BUFFER_WIDTH	2048
+#if defined(CONFIG_MACH_LGE)
+#define MAX_MIXER_HEIGHT	2560
+#else
 #define MAX_MIXER_HEIGHT	0xFFFF
+#endif
 #define MAX_IMG_WIDTH		0x3FFF
 #define MAX_IMG_HEIGHT		0x3FFF
 #define AHB_CLK_OFFSET		0x2B4
@@ -456,6 +460,9 @@ struct mdss_overlay_private {
 
 	struct mdss_data_type *mdata;
 	struct mutex ov_lock;
+#ifdef CONFIG_LGE_DEVFREQ_DFPS
+	struct mutex dfps_lock;
+#endif
 	struct mdss_mdp_ctl *ctl;
 	struct mdss_mdp_wb *wb;
 
@@ -479,6 +486,9 @@ struct mdss_overlay_private {
 	struct mdss_mdp_vsync_handler vsync_retire_handler;
 	struct work_struct retire_work;
 	int retire_cnt;
+#ifdef CONFIG_MACH_LGE
+	bool bw_limit;
+#endif
 	bool kickoff_released;
 };
 
@@ -835,6 +845,10 @@ int mdss_mdp_wb_ioctl_handler(struct msm_fb_data_type *mfd, u32 cmd, void *arg);
 int mdss_mdp_get_ctl_mixers(u32 fb_num, u32 *mixer_id);
 u32 mdss_mdp_get_mixercfg(struct mdss_mdp_mixer *mixer);
 u32 mdss_mdp_fb_stride(u32 fb_index, u32 xres, int bpp);
+
+#ifdef CONFIG_MACH_LGE
+int mdss_dsi_panel_invert(u32 enable);
+#endif
 
 int mdss_panel_register_done(struct mdss_panel_data *pdata);
 int mdss_mdp_limited_lut_igc_config(struct mdss_mdp_ctl *ctl);

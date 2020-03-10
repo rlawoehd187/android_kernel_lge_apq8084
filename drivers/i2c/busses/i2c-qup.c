@@ -144,6 +144,10 @@ enum msm_i2c_state {
 #define QUP_OUT_FIFO_NOT_EMPTY		0x10
 #define I2C_GPIOS_DT_CNT		(2)		/* sda and scl */
 
+#if defined(CONFIG_INPUT_MAX14688) || defined(CONFIG_LGE_PM_CHARGING_BQ24296_CHARGER) \
+	|| defined(CONFIG_LGE_PM_CHARGING_UNIFIED_WLC) || defined(CONFIG_TOUCHSCREEN_SYNAPTICS_I2C_RMI4)
+bool i2c_suspended;
+#endif
 /* Register:QUP_I2C_MASTER_CLK_CTL field setters */
 #define QUP_I2C_SCL_NOISE_REJECTION(reg_val, noise_rej_val) \
 		(((reg_val) & ~(0x3 << 24)) | (((noise_rej_val) & 0x3) << 24))
@@ -1781,6 +1785,9 @@ static int i2c_qup_pm_suspend_sys_noirq(struct device *device)
 	struct platform_device *pdev = to_platform_device(device);
 	struct qup_i2c_dev *dev = platform_get_drvdata(pdev);
 
+#if defined(CONFIG_INPUT_MAX14688) || defined(CONFIG_LGE_PM_CHARGING_BQ24296_CHARGER) || defined(CONFIG_LGE_PM_CHARGING_UNIFIED_WLC)
+	i2c_suspended = true;
+#endif
 	if (dev->pwr_state == MSM_I2C_PM_ACTIVE) {
 		dev_dbg(device, "system suspend\n");
 		i2c_qup_suspend(dev);
@@ -1816,6 +1823,9 @@ static int i2c_qup_pm_resume_sys_noirq(struct device *device)
 	 */
 	dev_dbg(device, "system resume\n");
 	dev->pwr_state = MSM_I2C_PM_SUSPENDED;
+#if defined(CONFIG_INPUT_MAX14688) || defined(CONFIG_LGE_PM_CHARGING_BQ24296_CHARGER) || defined(CONFIG_LGE_PM_CHARGING_UNIFIED_WLC)
+	i2c_suspended = false;
+#endif
 	return 0;
 }
 #endif /* CONFIG_PM */

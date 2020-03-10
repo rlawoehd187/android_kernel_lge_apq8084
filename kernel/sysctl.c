@@ -1573,6 +1573,13 @@ static struct ctl_table fs_table[] = {
 		.extra1		= &minolduid,
 		.extra2		= &maxolduid,
 	},
+	{
+		.procname	= "detect_fd_leak",
+		.data		= &detect_fd_leak,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
 #ifdef CONFIG_FILE_LOCKING
 	{
 		.procname	= "leases-enable",

@@ -360,6 +360,7 @@ static void csvt_ctrl_close(struct usb_serial_port *port)
 	usb_kill_urb(port->interrupt_in_urb);
 }
 
+#ifndef CONFIG_USB_G_LGE_ANDROID
 static int csvt_ctrl_attach(struct usb_serial *serial)
 {
 	struct csvt_ctrl_dev	*dev;
@@ -384,6 +385,37 @@ static void csvt_ctrl_release(struct usb_serial *serial)
 	kfree(dev);
 	usb_set_serial_port_data(port, NULL);
 }
+#endif
+
+#ifdef CONFIG_USB_G_LGE_ANDROID
+static int csvt_ctrl_port_probe(struct usb_serial_port *port)
+{
+	struct csvt_ctrl_dev	*dev;
+
+	dev_dbg(&port->dev, "%s", __func__);
+
+	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+	if (!dev)
+		return -ENOMEM;
+
+	mutex_init(&dev->dev_lock);
+	usb_set_serial_port_data(port, dev);
+
+	return 0;
+}
+
+static int csvt_ctrl_port_remove(struct usb_serial_port *port)
+{
+	struct csvt_ctrl_dev	*dev = usb_get_serial_port_data(port);
+
+	dev_dbg(&port->dev, "%s", __func__);
+
+	kfree(dev);
+	usb_set_serial_port_data(port, NULL);
+
+	return 0;
+}
+#endif
 
 static struct usb_serial_driver csvt_device = {
 	.driver			= {
@@ -402,9 +434,17 @@ static struct usb_serial_driver csvt_device = {
 	.ioctl			= csvt_ctrl_ioctl,
 	.set_termios		= csvt_ctrl_set_termios,
 	.read_int_callback	= csvt_ctrl_int_cb,
+#ifndef CONFIG_USB_G_LGE_ANDROID
 	.attach			= csvt_ctrl_attach,
+#endif
 	.reset_resume		= usb_serial_generic_resume,
+#ifndef CONFIG_USB_G_LGE_ANDROID
 	.release		= csvt_ctrl_release,
+#endif
+#ifdef CONFIG_USB_G_LGE_ANDROID
+	.port_probe		= csvt_ctrl_port_probe,
+	.port_remove		= csvt_ctrl_port_remove,
+#endif
 };
 
 static struct usb_serial_driver * const serial_drivers[] = {

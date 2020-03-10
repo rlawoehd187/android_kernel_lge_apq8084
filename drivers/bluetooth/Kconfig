@@ -246,9 +246,24 @@ config BT_WILINK
 config MSM_BT_POWER
 	tristate "MSM Bluetooth Power Control"
 	depends on ARCH_MSM && RFKILL
-	default m
+	default n
 	help
 	  Provides a parameter to switch on/off power from PMIC
 	  to Bluetooth device.
 
+config LGE_BLUETOOTH
+	bool "LGE Bluetooth driver"
+	depends on BT
+	default n
+	help
+	  LGE Bluetooth driver.
+	  This driver provides support for LGE BT.
+
+config LGE_BLUESLEEP
+	bool "LGE Bluetooth sleep driver"
+	depends on LGE_BLUETOOTH
+	default n
+	help
+	  LGE Bluetooth sleep driver.
+	  This driver provides support for LGE BT Sleep.
 endmenu

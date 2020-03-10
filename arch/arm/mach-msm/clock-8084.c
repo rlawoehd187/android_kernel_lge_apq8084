@@ -1538,6 +1538,10 @@ static struct rcg_clk ce3_clk_src = {
 };
 
 static struct clk_freq_tbl ftbl_gcc_gp1_3_clk[] = {
+#if defined(CONFIG_TSPDRV) || defined(CONFIG_LGE_SM100)
+	F(22222,             xo,    16, 1, 54), /* for 175Hz */
+	F(29813,             xo,    7, 1, 92), /* for 230Hz */
+#endif
 	F( 19200000,         xo,    1, 0, 0),
 	F(100000000,      gpll0,    6, 0, 0),
 	F(200000000,      gpll0,    3, 0, 0),
@@ -5924,7 +5928,7 @@ static struct clk_lookup apq_clocks_8084[] = {
 
 	CLK_LOOKUP("measure",	measure_clk.c,	"debug"),
 	/* NFC */
-	CLK_LOOKUP("ref_clk",            bb_clk2_a_pin.c, "3-000e"),
+	/* CLK_LOOKUP("ref_clk",            bb_clk2_a_pin.c, "3-000e"), */
 	/* RPM clocks */
 	CLK_LOOKUP("bus_clk", snoc_clk.c, ""),
 	CLK_LOOKUP("bus_clk", pnoc_clk.c, ""),
@@ -6024,7 +6028,11 @@ static struct clk_lookup apq_clocks_8084[] = {
 	CLK_LOOKUP("core_clk", gcc_blsp1_uart6_apps_clk.c,  "f9922000.uart"),
 
 	/* BLSP2  clocks */
+#ifdef CONFIG_LGE_IRRC
+	CLK_LOOKUP("iface_clk", gcc_blsp2_ahb_clk.c,	"f995d000.serial"),
+#else
 	CLK_LOOKUP("iface_clk", gcc_blsp2_ahb_clk.c,	"f995d000.uart"),
+#endif
 	CLK_LOOKUP("iface_clk",	gcc_blsp2_ahb_clk.c,	"f995e000.serial"),
 	CLK_LOOKUP("iface_clk", gcc_blsp2_ahb_clk.c,	"f9966000.i2c"),
 	CLK_LOOKUP("",	gcc_blsp2_qup1_i2c_apps_clk.c,	""),
@@ -6040,7 +6048,11 @@ static struct clk_lookup apq_clocks_8084[] = {
 	CLK_LOOKUP("",	gcc_blsp2_qup6_i2c_apps_clk.c,	""),
 	CLK_LOOKUP("",	gcc_blsp2_qup6_spi_apps_clk.c,	""),
 	CLK_LOOKUP("",	gcc_blsp2_uart1_apps_clk.c, ""),
+#ifdef CONFIG_LGE_IRRC
+	CLK_LOOKUP("core_clk", gcc_blsp2_uart1_apps_clk.c, "f995d000.serial"),
+#else
 	CLK_LOOKUP("core_clk", gcc_blsp2_uart1_apps_clk.c, "f995d000.uart"),
+#endif
 	CLK_LOOKUP("core_clk", gcc_blsp2_uart2_apps_clk.c, "f995e000.serial"),
 	CLK_LOOKUP("",	gcc_blsp2_uart3_apps_clk.c,	""),
 	CLK_LOOKUP("",	gcc_blsp2_uart4_apps_clk.c,	""),
@@ -6078,7 +6090,11 @@ static struct clk_lookup apq_clocks_8084[] = {
 
 	CLK_LOOKUP("",	gcc_gp1_clk.c,	""),
 	CLK_LOOKUP("",	gcc_gp2_clk.c,	""),
+#if defined(CONFIG_TSPDRV) || defined(CONFIG_LGE_SM100)
+	CLK_LOOKUP("gp3_clk", gcc_gp3_clk.c, "vibrator"),
+#else
 	CLK_LOOKUP("",	gcc_gp3_clk.c,	""),
+#endif
 
 	CLK_LOOKUP("bus_clk",	gcc_lpass_q6_axi_clk.c,	"fe200000.qcom,lpass"),
 	CLK_LOOKUP("core_clk",	dummy_clk,	"fe200000.qcom,lpass"),
@@ -6579,12 +6595,20 @@ static struct clk_lookup apq_clocks_8084[] = {
 	CLK_LOOKUP("iface_clk", camss_vfe_vfe_ahb_clk.c,
 						"fda04000.qcom,cpp"),
 	/* Camera Sensor Clocks */
+#ifdef CONFIG_MACH_LGE
+	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "20.lge,camera"),
+	CLK_LOOKUP("cam_src_clk",	mclk2_clk_src.c, "6e.lge,camera"),
+#endif
 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "20.qcom,eeprom"),
 	CLK_LOOKUP("cam_src_clk", mclk1_clk_src.c, "90.qcom,camera"),
 	CLK_LOOKUP("cam_src_clk", mclk0_clk_src.c, "0.qcom,camera"),
 	CLK_LOOKUP("cam_src_clk",	mclk1_clk_src.c, "1.qcom,camera"),
 	CLK_LOOKUP("cam_src_clk",	mclk2_clk_src.c, "2.qcom,camera"),
 	CLK_LOOKUP("",	mclk3_clk_src.c,	""),
+#ifdef CONFIG_MACH_LGE
+	CLK_LOOKUP("cam_clk", camss_mclk0_clk.c, "20.lge,camera"),
+	CLK_LOOKUP("cam_clk", camss_mclk2_clk.c, "6e.lge,camera"),
+#endif
 	CLK_LOOKUP("cam_clk", camss_mclk0_clk.c, "20.qcom,eeprom"),
 	CLK_LOOKUP("cam_clk", camss_mclk1_clk.c, "90.qcom,camera"),
 	CLK_LOOKUP("cam_clk", camss_mclk0_clk.c, "0.qcom,camera"),
@@ -6763,6 +6787,15 @@ static struct clk_lookup apq_clocks_8084[] = {
 	/* QCA1530 clocks */
 	CLK_LOOKUP("qca,rtc_clk",	div_clk3.c, "qca1530.1"),
 	CLK_LOOKUP("qca,tcxo_clk",	rf_clk2_pin.c, "qca1530.1"),
+
+	/*  NFC clocks */
+#if defined(CONFIG_LGE_NFC_PN544_C3) || defined(CONFIG_LGE_NFC_PN547_C2)
+	CLK_LOOKUP("xo",  bb_clk2_pin.c,  "pn547"),
+#endif
+
+#if defined(CONFIG_LGE_BROADCAST_TDMB)
+	CLK_LOOKUP("xo",	rf_clk2.c,		"spi0.0"),
+#endif
 };
 
 static struct pll_config_regs mmpll0_regs __initdata = {
@@ -6937,6 +6970,12 @@ static void __init apq8084_clock_post_init(void)
 	 * to remain on whenever CPUs aren't power collapsed.
 	 */
 	clk_prepare_enable(&xo_a_clk_src.c);
+
+/*                                  */
+#if defined(CONFIG_LGE_NFC_PN544_C3) || defined(CONFIG_LGE_NFC_PN547_C2)
+	clk_prepare_enable(&bb_clk2_pin.c);
+#endif
+/*                                  */
 }
 
 #define GCC_CC_PHYS		0xFC400000

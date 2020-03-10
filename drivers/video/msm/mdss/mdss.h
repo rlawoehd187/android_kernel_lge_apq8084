@@ -171,6 +171,10 @@ struct mdss_data_type {
 	u32 enable_bw_release;
 	u32 enable_rotator_bw_release;
 
+#ifdef CONFIG_MACH_LGE
+	struct mdss_fudge_factor ib_factor_limit;
+#endif
+
 	struct mdss_hw_settings *hw_settings;
 
 	struct mdss_mdp_pipe *vig_pipes;
@@ -219,6 +223,16 @@ struct mdss_data_type {
 	bool traffic_shaper_en;
 	int iommu_ref_cnt;
 	atomic_t active_intf_cnt;
+
+#ifdef CONFIG_LGE_VSYNC_SKIP
+	char enable_skip_vsync;
+	ulong skip_value;
+	ulong weight;
+	ulong bucket;
+	ulong skip_count;
+	int skip_ratio;
+	bool skip_first;
+#endif
 
 	u64 ab[MDSS_MAX_HW_BLK];
 	u64 ib[MDSS_MAX_HW_BLK];

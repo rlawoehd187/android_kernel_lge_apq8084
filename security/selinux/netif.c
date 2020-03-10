@@ -256,7 +256,6 @@ static int sel_netif_avc_callback(u32 event)
 {
 	if (event == AVC_CALLBACK_RESET) {
 		sel_netif_flush();
-		synchronize_net();
 	}
 	return 0;
 }

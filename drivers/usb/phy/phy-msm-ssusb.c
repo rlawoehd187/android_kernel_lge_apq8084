@@ -30,6 +30,16 @@ static int ss_phy_override_deemphasis;
 module_param(ss_phy_override_deemphasis, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(ss_phy_override_deemphasis, "Override SSPHY demphasis value");
 
+#ifdef CONFIG_MACH_LGE
+static int ss_phy_override_rx_eq;
+module_param(ss_phy_override_rx_eq, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(ss_phy_override_rx_eq, "Override SSPHY RX equalization value");
+
+static int ss_phy_override_amplitude;
+module_param(ss_phy_override_amplitude, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(ss_phy_override_amplitude, "Override SSPHY amplitude value");
+#endif
+
 /* QSCRATCH SSPHY control registers */
 #define SS_PHY_CTRL_REG			0x30
 #define SS_PHY_PARAM_CTRL_1		0x34
@@ -281,7 +291,14 @@ static int msm_ssphy_set_params(struct usb_phy *uphy)
 	data &= ~(1 << 6);
 	data |= (1 << 7);
 	data &= ~(0x7 << 8);
+#ifdef CONFIG_MACH_LGE
+	if (ss_phy_override_rx_eq)
+		data |= (ss_phy_override_rx_eq << 8);
+	else
+		data |= (0x3 << 8);
+#else
 	data |= (0x3 << 8);
+#endif
 	data |= (0x1 << 11);
 	msm_ssusb_write_phycreg(phy->base, 0x1006, data);
 
@@ -300,7 +317,14 @@ static int msm_ssphy_set_params(struct usb_phy *uphy)
 	else
 		data |= (0x16 << 7);
 	data &= ~0x7F;
+#ifdef CONFIG_MACH_LGE
+	if (ss_phy_override_amplitude)
+		data |= (ss_phy_override_amplitude | (1 << 14));
+	else
+		data |= (0x7F | (1 << 14));
+#else
 	data |= (0x7F | (1 << 14));
+#endif
 	msm_ssusb_write_phycreg(phy->base, 0x1002, data);
 
 	/*
@@ -546,6 +570,16 @@ static int msm_ssphy_probe(struct platform_device *pdev)
 	if (of_property_read_u32(dev->of_node, "qcom,deemphasis-value",
 						&phy->deemphasis_val))
 		dev_dbg(dev, "unable to read ssphy deemphasis value\n");
+#ifdef CONFIG_MACH_LGE
+
+	if (of_property_read_u32(dev->of_node, "qcom,rx-eq-value",
+						&ss_phy_override_rx_eq))
+		dev_dbg(dev, "unable to read ssphy RX equalization value\n");
+
+	if (of_property_read_u32(dev->of_node, "qcom,tx-amplitude-value",
+						&ss_phy_override_amplitude))
+		dev_dbg(dev, "unable to read ssphy TX amplitude value\n");
+#endif
 
 	phy->phy.init			= msm_ssphy_init;
 	phy->phy.set_suspend		= msm_ssphy_set_suspend;

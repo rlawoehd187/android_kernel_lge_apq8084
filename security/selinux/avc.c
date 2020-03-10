@@ -21,6 +21,7 @@
 #include <linux/dcache.h>
 #include <linux/init.h>
 #include <linux/skbuff.h>
+#include <linux/netdevice.h>
 #include <linux/percpu.h>
 #include <net/sock.h>
 #include <linux/un.h>
@@ -656,6 +657,7 @@ int avc_ss_reset(u32 seqno)
 		}
 	}
 
+	synchronize_net();
 	avc_latest_notif_update(seqno, 0);
 	return rc;
 }

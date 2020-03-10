@@ -26,6 +26,11 @@
 #include <linux/module.h>
 #include <linux/export.h>
 #include <linux/qpnp/pin.h>
+#ifdef CONFIG_LGE_QPNP_LEDS
+#include <linux/qpnp/pwm.h>
+#include <linux/leds.h>
+extern void rgb_luts_set(void);
+#endif
 
 #define Q_REG_ADDR(q_spec, reg_index)	\
 		((q_spec)->offset + reg_index)
@@ -170,6 +175,12 @@ struct qpnp_pin_spec {
 	struct device_node *node;
 	enum qpnp_pin_param_type params[Q_NUM_PARAMS];
 	struct qpnp_pin_chip *q_chip;
+#ifdef CONFIG_LGE_QPNP_LEDS
+	struct pwm_device *pwm_dev;
+	int pwm_channel_id;
+	struct pwm_duty_cycles *duty_cycles;
+	struct led_classdev cdev;
+#endif
 };
 
 struct qpnp_pin_chip {
@@ -183,6 +194,12 @@ struct qpnp_pin_chip {
 	struct list_head	chip_list;
 	struct dentry		*dfs_dir;
 };
+
+#ifdef CONFIG_LGE_QPNP_LEDS
+struct qpnp_pin_spec *red_led;
+struct qpnp_pin_spec *blue_led;
+struct qpnp_pin_spec *green_led;
+#endif
 
 static LIST_HEAD(qpnp_pin_chips);
 static DEFINE_MUTEX(qpnp_pin_chips_lock);
@@ -221,6 +238,36 @@ static inline void qpnp_chip_gpio_set_spec(struct qpnp_pin_chip *q_chip,
 {
 	q_chip->chip_gpios[chip_gpio] = spec;
 }
+
+
+static void qpnp_led_set(struct led_classdev *led_cdev,
+	enum led_brightness value)
+{
+	struct qpnp_pin_spec *led;
+
+	led = container_of(led_cdev, struct qpnp_pin_spec, cdev);
+
+	if (value < LED_OFF) {
+		dev_err(&led->q_chip->spmi->dev, "Invalid brightness value\n");
+		return;
+		}
+
+	if (value > led->cdev.max_brightness)
+		value = led->cdev.max_brightness;
+
+	led->cdev.brightness = value;
+
+	rgb_luts_set();
+}
+
+static enum led_brightness qpnp_led_get(struct led_classdev *led_cdev)
+{
+	struct qpnp_pin_spec *led;
+	led = container_of(led_cdev, struct qpnp_pin_spec, cdev);
+	return led->cdev.brightness;
+}
+
+
 
 /*
  * Determines whether a specified param's configuration is correct.
@@ -508,6 +555,9 @@ static int _qpnp_pin_config(struct qpnp_pin_chip *q_chip,
 			    struct qpnp_pin_cfg *param)
 {
 	struct device *dev = &q_chip->spmi->dev;
+#ifdef CONFIG_LGE_QPNP_LEDS
+	struct device_node *node = q_spec->node;
+#endif
 	int rc;
 
 	rc = qpnp_pin_check_constraints(q_spec, param);
@@ -568,11 +618,72 @@ static int _qpnp_pin_config(struct qpnp_pin_chip *q_chip,
 
 	rc = qpnp_pin_write_regs(q_chip, q_spec);
 	if (rc) {
-		dev_err(&q_chip->spmi->dev, "%s: unable to write master enable\n",
-								__func__);
+		dev_err(&q_chip->spmi->dev,
+				"%s: unable to write enable\n", __func__);
 		goto gpio_cfg;
 	}
 
+#ifdef CONFIG_LGE_QPNP_LEDS
+	if (q_spec->pmic_pin == 7 && q_chip->pmic_pin_highest == 22) {
+		printk(KERN_INFO "%s, %d : pwm setting : red \n", __func__, __LINE__);
+		red_led = q_spec;
+		red_led->pwm_channel_id = 2;
+
+		rc = of_property_read_string(node, "linux,name",
+			&red_led->cdev.name);
+
+		if (rc < 0)
+			printk(KERN_INFO "Failure reading led name, rc = %d\n", rc);
+
+		red_led->cdev.brightness_set = qpnp_led_set;
+		red_led->cdev.brightness_get = qpnp_led_get;
+
+		rc = led_classdev_register(&q_chip->spmi->dev, &red_led->cdev);
+
+		if (rc)
+			printk(KERN_INFO "unable to register led %d,rc=%d\n",
+			red_led->pwm_channel_id, rc);
+
+	} else if (q_spec->pmic_pin == 8 && q_chip->pmic_pin_highest == 22) {
+		printk(KERN_INFO "%s, %d : pwm setting : green \n", __func__, __LINE__);
+		green_led = q_spec;
+		green_led->pwm_channel_id = 3;
+
+		rc = of_property_read_string(node, "linux,name",
+			&green_led->cdev.name);
+
+		if (rc < 0)
+			printk(KERN_INFO "Failure reading led name, rc = %d\n", rc);
+
+		green_led->cdev.brightness_set = qpnp_led_set;
+		green_led->cdev.brightness_get = qpnp_led_get;
+
+		rc = led_classdev_register(&q_chip->spmi->dev, &green_led->cdev);
+
+		if (rc)
+			printk(KERN_INFO "unable to register led %d,rc=%d\n",
+			green_led->pwm_channel_id, rc);
+
+	} else if (q_spec->pmic_pin == 9 && q_chip->pmic_pin_highest == 22) {
+		printk(KERN_INFO "%s, %d : pwm setting : blue \n", __func__, __LINE__);
+		blue_led = q_spec;
+		blue_led->pwm_channel_id = 4;
+
+		rc = of_property_read_string(node, "linux,name",
+			&blue_led->cdev.name);
+
+		if (rc < 0)
+			printk(KERN_INFO "Failure reading led name, rc = %d\n", rc);
+		blue_led->cdev.brightness_set = qpnp_led_set;
+		blue_led->cdev.brightness_get = qpnp_led_get;
+
+		rc = led_classdev_register(&q_chip->spmi->dev, &blue_led->cdev);
+
+		if (rc)
+			printk(KERN_INFO "unable to register led %d,rc=%d\n",
+			blue_led->pwm_channel_id, rc);
+	}
+#endif
 	return 0;
 
 gpio_cfg:

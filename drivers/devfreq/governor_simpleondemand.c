@@ -43,7 +43,6 @@ static int devfreq_simple_ondemand_func(struct devfreq *df,
 	if (dfso_upthreshold > 100 ||
 	    dfso_upthreshold < dfso_downdifferential)
 		return -EINVAL;
-
 	/* Prevent overflow */
 	if (stat.busy_time >= (1 << 24) || stat.total_time >= (1 << 24)) {
 		stat.busy_time >>= 7;

@@ -521,3 +521,20 @@ struct clk_ops clk_ops_kpss_l2 = {
 	.list_rate = kpss_core_list_rate,
 	.handoff = kpss_l2_handoff,
 };
+
+static int speed_bin, pvs_bin;
+void set_speed_pvs_bin(int speed, int pvs)
+{
+	speed_bin = speed;
+	pvs_bin = pvs;
+}
+
+void get_speed_bin(int *speed)
+{
+	*speed = speed_bin;
+}
+
+void get_pvs_bin(int *pvs)
+{
+	*pvs = pvs_bin;
+}

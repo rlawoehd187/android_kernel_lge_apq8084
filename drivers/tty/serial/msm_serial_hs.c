@@ -3035,6 +3035,48 @@ deregister_bam:
 	return rc;
 }
 
+/*                                                                    */
+/*                                                                 */
+#ifdef CONFIG_LGE_BLUESLEEP
+struct uart_port* msm_hs_get_bt_uport(unsigned int line)     //cockoo131107
+{
+	//return &q_uart_port[line].uport;
+	return msm_hs_get_uart_port(line); // return uart_port, check msm_hs_get_uart_port is uses int
+}
+EXPORT_SYMBOL(msm_hs_get_bt_uport);
+
+/* Get UART Clock State : */
+int msm_hs_get_bt_uport_clock_state(struct uart_port *uport)
+{
+	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
+	//unsigned long flags;
+	int ret = CLOCK_REQUEST_UNAVAILABLE;
+
+	//mutex_lock(&msm_uport->clk_mutex);
+	//spin_lock_irqsave(&uport->lock, flags);
+
+	switch (msm_uport->clk_state) {
+		case MSM_HS_CLK_ON:
+		case MSM_HS_CLK_PORT_OFF:
+			printk(KERN_ERR "UART Clock already on or port not use : %d\n", msm_uport->clk_state);
+			ret = CLOCK_REQUEST_UNAVAILABLE;
+			break;
+		case MSM_HS_CLK_REQUEST_OFF:
+		case MSM_HS_CLK_OFF:
+			printk(KERN_ERR "Uart clock off. Please clock on : %d\n", msm_uport->clk_state);
+			ret = CLOCK_REQUEST_AVAILABLE;
+			break;
+	}
+
+	//spin_unlock_irqrestore(&uport->lock, flags);
+	//mutex_unlock(&msm_uport->clk_mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL(msm_hs_get_bt_uport_clock_state);
+#endif /*                      */
+/*                                                                 */
+/*                                                        */
 
 static bool deviceid[UARTDM_NR] = {0};
 /*

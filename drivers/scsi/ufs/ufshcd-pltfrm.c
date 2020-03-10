@@ -303,6 +303,9 @@ static int ufshcd_pltfrm_probe(struct platform_device *pdev)
 	int irq, err;
 	struct device *dev = &pdev->dev;
 
+	if (strlen(android_boot_dev) && strcmp(android_boot_dev, dev_name(dev)))
+		return -ENODEV;
+
 	mem_res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	mmio_base = devm_ioremap_resource(dev, mem_res);
 	if (IS_ERR(mmio_base)) {

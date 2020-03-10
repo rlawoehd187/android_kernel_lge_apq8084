@@ -558,7 +558,7 @@ static int dwc3_gadget_set_ep_config(struct dwc3 *dwc, struct dwc3_ep *dep,
 		dep->stream_capable = true;
 	}
 
-	if (usb_endpoint_xfer_isoc(desc))
+	if (!usb_endpoint_xfer_control(desc))
 		params.param1 |= DWC3_DEPCFG_XFER_IN_PROGRESS_EN;
 
 	/*
@@ -846,7 +846,8 @@ static void dwc3_gadget_ep_free_request(struct usb_ep *ep,
  */
 static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 		struct dwc3_request *req, dma_addr_t dma,
-		unsigned length, unsigned last, unsigned chain, unsigned node)
+		unsigned length, unsigned last, unsigned chain, unsigned node,
+		unsigned ioc)
 {
 	struct dwc3		*dwc = dep->dwc;
 	struct dwc3_trb		*trb;
@@ -897,6 +898,11 @@ update_trb:
 	case USB_ENDPOINT_XFER_BULK:
 	case USB_ENDPOINT_XFER_INT:
 		trb->ctrl = DWC3_TRBCTL_NORMAL;
+		if (ioc) {
+			trb->ctrl |= DWC3_TRB_CTRL_CSP;
+			trb->ctrl |= DWC3_TRB_CTRL_IOC;
+		}
+
 		break;
 	default:
 		/*
@@ -1039,6 +1045,7 @@ static void dwc3_prepare_trbs(struct dwc3_ep *dep, bool starting)
 
 			for_each_sg(sg, s, request->num_mapped_sgs, i) {
 				unsigned chain = true;
+				unsigned	ioc = 0;
 
 				length = sg_dma_len(s);
 				dma = sg_dma_address(s);
@@ -1091,8 +1098,12 @@ start_trb_queuing:
 				if (last_one)
 					chain = false;
 
+				if (!last_one && !chain &&
+					!request->no_interrupt)
+					ioc = 1;
+
 				dwc3_prepare_one_trb(dep, req, dma, length,
-						last_one, chain, i);
+						last_one, chain, i, ioc);
 
 				if (last_one)
 					break;
@@ -1103,6 +1114,7 @@ start_trb_queuing:
 		} else {
 			struct dwc3_request	*req1;
 			int maxpkt_size = usb_endpoint_maxp(dep->endpoint.desc);
+			unsigned	ioc = 0;
 
 			dma = req->request.dma;
 			length = req->request.length;
@@ -1125,8 +1137,10 @@ start_trb_queuing:
 			if (last_req)
 				last_one = 1;
 
+			if (!last_one && !req->request.no_interrupt)
+				ioc = 1;
 			dwc3_prepare_one_trb(dep, req, dma, length,
-					last_one, false, 0);
+					last_one, false, 0, ioc);
 
 			dbg_queue(dep->number, &req->request, 0);
 			if (last_one)
@@ -2368,13 +2382,6 @@ static void dwc3_endpoint_interrupt(struct dwc3 *dwc,
 		break;
 	case DWC3_DEPEVT_XFERINPROGRESS:
 		dep->dbg_ep_events.xferinprogress++;
-		if (!usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
-			dev_dbg(dwc->dev, "%s is not an Isochronous endpoint\n",
-					dep->name);
-			return;
-		}
-
-		dbg_event(dep->number, "XFRPROG", 0);
 		dwc3_endpoint_transfer_complete(dwc, dep, event, 0);
 		break;
 	case DWC3_DEPEVT_XFERNOTREADY:
@@ -2579,8 +2586,9 @@ static void dwc3_gadget_usb2_phy_suspend(struct dwc3 *dwc, int suspend)
 static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 {
 	u32			reg;
+#ifdef CONFIG_LGE_PM
 	struct dwc3_otg		*dotg = dwc->dotg;
-
+#endif
 	dev_vdbg(dwc->dev, "%s\n", __func__);
 
 	/*
@@ -2625,8 +2633,10 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 		dwc3_gadget_usb3_phy_suspend(dwc, false);
 	}
 
+#ifdef CONFIG_LGE_PM
 	if (dotg && dotg->otg.phy)
 		usb_phy_set_power(dotg->otg.phy, 0);
+#endif
 
 	if (dwc->gadget.speed != USB_SPEED_UNKNOWN)
 		dwc3_disconnect_gadget(dwc);
@@ -2691,6 +2701,10 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 	int			ret;
 	u32			reg;
 	u8			speed;
+#ifdef CONFIG_LGE_PM
+	struct dwc3_otg		*dotg = dwc->dotg;
+	struct dwc3_charger *charger = dotg->charger;
+#endif
 
 	dev_vdbg(dwc->dev, "%s\n", __func__);
 
@@ -2779,6 +2793,18 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 		dev_err(dwc->dev, "failed to enable %s\n", dep->name);
 		return;
 	}
+#ifdef CONFIG_LGE_PM
+	if(charger->chg_type == DWC3_FLOATED_CHARGER) {
+		dev_info(dwc->dev, "Need to re-detect charger type\n");
+		// In this case, charger type can be SDP, or CDP. But it needs time to detect weather SDP or CDP.
+		// And charger detect check it as floated charger with USB 3.0. So at this time set the charger type as SDP
+		//charger->chg_type = DWC3_INVALID_CHARGER;
+		//charger->start_detection(dotg->charger, true);
+		charger->chg_type = DWC3_SDP_CHARGER;
+	}
+	if (dotg && dotg->otg.phy)
+		usb_phy_set_power(dotg->otg.phy, 500);
+#endif
 
 	/*
 	 * Configure PHY via GUSB3PIPECTLn if required.
@@ -3232,7 +3258,7 @@ int dwc3_gadget_init(struct dwc3 *dwc)
 		dwc->gadget.max_speed		= USB_SPEED_HIGH;
 
 	dwc->gadget.speed		= USB_SPEED_UNKNOWN;
-	dwc->gadget.sg_supported	= true;
+	dwc->gadget.sg_supported	= false;
 	dwc->gadget.name		= "dwc3-gadget";
 
 	/*
